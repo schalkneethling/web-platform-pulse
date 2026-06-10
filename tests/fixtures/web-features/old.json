@@ -1,0 +1,91 @@
+{
+  "browsers": {},
+  "features": {
+    "lh": {
+      "kind": "feature",
+      "name": "lh unit",
+      "description": "The lh CSS length unit corresponds to the requested line height, the computed value of the line-height property. Some lines may be higher than this based on their content.",
+      "group": ["units"],
+      "spec": ["https://drafts.csswg.org/css-values-4/#lh"],
+      "status": {
+        "baseline": "low",
+        "baseline_low_date": "2023-11-21",
+        "support": {
+          "chrome": "109",
+          "chrome_android": "109",
+          "edge": "109",
+          "firefox": "120",
+          "firefox_android": "120",
+          "safari": "16.4",
+          "safari_ios": "16.4"
+        }
+      }
+    },
+    "container-style-queries": {
+      "kind": "feature",
+      "name": "Container style queries",
+      "description": "Container style queries with the @container at-rule apply styles to an element based on the values of custom properties of its container.",
+      "group": ["container-queries"],
+      "spec": ["https://drafts.csswg.org/css-conditional-5/#style-container"],
+      "caniuse": ["css-container-queries-style"],
+      "status": {
+        "baseline": false,
+        "support": {
+          "chrome": "111",
+          "chrome_android": "111",
+          "edge": "111",
+          "firefox": "151",
+          "firefox_android": "151",
+          "safari": "18",
+          "safari_ios": "18"
+        }
+      }
+    },
+    "has": {
+      "kind": "feature",
+      "name": ":has()",
+      "description": "The :has() CSS functional pseudo-class matches an element if any of the selectors passed as parameters would match at least one element.",
+      "group": ["selectors"],
+      "spec": ["https://drafts.csswg.org/selectors-4/#relational"],
+      "caniuse": ["css-has"],
+      "status": {
+        "baseline": "low",
+        "baseline_low_date": "2023-12-19",
+        "support": {
+          "chrome": "105",
+          "chrome_android": "105",
+          "edge": "105",
+          "firefox": "121",
+          "firefox_android": "121",
+          "safari": "15.4",
+          "safari_ios": "15.4"
+        }
+      }
+    },
+    "crisp-edges": {
+      "kind": "feature",
+      "name": "crisp-edges",
+      "description": "The image-rendering: crisp-edges CSS declaration scales images to preserve lines without blurring.",
+      "group": ["image-scaling"],
+      "spec": ["https://drafts.csswg.org/css-images-3/#the-image-rendering"],
+      "status": {
+        "baseline": "low",
+        "baseline_low_date": "2026-05-07",
+        "support": {
+          "chrome": "148",
+          "chrome_android": "148",
+          "edge": "148",
+          "firefox": "65",
+          "firefox_android": "65",
+          "safari_ios": "7"
+        }
+      }
+    },
+    "masonry-layout": {
+      "kind": "moved",
+      "redirect_target": "masonry"
+    }
+  },
+  "groups": {},
+  "snapshots": {}
+}
