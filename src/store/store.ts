@@ -1,3 +1,4 @@
+import type { DeliveryResult } from "../core/delivery.ts";
 import { orderForDigest, type DigestView } from "../core/digest.ts";
 import { scoreSignificance } from "../core/significance.ts";
 import type { CandidateEvent, ChangeEvent, Provenance, Subject } from "../core/types.ts";
@@ -236,27 +237,20 @@ export const findOperator = async (sql: Sql): Promise<string | null> => {
   return rows[0]?.id ?? null;
 };
 
-export const getLatestDigest = async (
-  sql: Sql,
-  subscriberId: string,
-): Promise<DigestView | null> => {
-  const digests = await sql<
-    { id: string; cadence: string; window_start: Date; window_end: Date }[]
-  >`
-    select id, cadence, window_start, window_end
-    from digest where subscriber_id = ${subscriberId}
-    order by window_end desc limit 1
-  `;
-  const digest = digests[0];
-  if (!digest) return null;
+interface DigestRow {
+  id: string;
+  cadence: string;
+  window_start: Date;
+  window_end: Date;
+}
 
+const digestView = async (sql: Queryable, digest: DigestRow): Promise<DigestView> => {
   const rows = await sql<ChangeEventRow[]>`
     select ce.* from digest_item di
     join change_event ce on ce.id = di.event_id
     where di.digest_id = ${digest.id}
     order by di.position
   `;
-
   return {
     id: digest.id,
     cadence: digest.cadence,
@@ -264,4 +258,63 @@ export const getLatestDigest = async (
     windowEnd: digest.window_end.toISOString(),
     items: await eventsWithProvenance(sql, rows),
   };
+};
+
+export const getLatestDigest = async (
+  sql: Sql,
+  subscriberId: string,
+): Promise<DigestView | null> => {
+  const digests = await sql<DigestRow[]>`
+    select id, cadence, window_start, window_end
+    from digest where subscriber_id = ${subscriberId}
+    order by window_end desc limit 1
+  `;
+  return digests[0] ? digestView(sql, digests[0]) : null;
+};
+
+export const getDigest = async (sql: Sql, digestId: string): Promise<DigestView | null> => {
+  const digests = await sql<DigestRow[]>`
+    select id, cadence, window_start, window_end from digest where id = ${digestId}
+  `;
+  return digests[0] ? digestView(sql, digests[0]) : null;
+};
+
+export interface PendingDelivery {
+  digestId: string;
+  email: string;
+}
+
+/**
+ * Digests a channel has not yet successfully delivered (§10). Failed
+ * attempts leave the digest pending, so the next run resends only those.
+ */
+export const digestsAwaitingDelivery = async (
+  sql: Sql,
+  channelId: string,
+): Promise<PendingDelivery[]> => {
+  const rows = await sql<{ digest_id: string; email: string }[]>`
+    select d.id as digest_id, s.email
+    from digest d
+    join subscriber s on s.id = d.subscriber_id
+    where not exists (
+      select 1 from delivery dv
+      where dv.digest_id = d.id and dv.channel = ${channelId} and dv.status = 'sent'
+    )
+    order by d.window_end
+  `;
+  return rows.map((row) => ({ digestId: row.digest_id, email: row.email }));
+};
+
+/** One delivery row per attempt per channel, carrying status (§10). */
+export const recordDelivery = async (
+  sql: Sql,
+  digestId: string,
+  channelId: string,
+  result: DeliveryResult,
+): Promise<void> => {
+  await sql`
+    insert into delivery (digest_id, channel, status, error)
+    values (${digestId}, ${channelId}, ${result.status},
+            ${result.status === "failed" ? result.error : null})
+  `;
 };

@@ -3,11 +3,14 @@ import type { CandidateEvent } from "../../src/core/types.ts";
 import { connect } from "../../src/store/db.ts";
 import {
   assembleDigest,
+  digestsAwaitingDelivery,
   ensureOperator,
   ensureSource,
+  getDigest,
   getLatestDigest,
   ingestCandidates,
   loadSourceState,
+  recordDelivery,
   saveSourceState,
 } from "../../src/store/store.ts";
 
@@ -154,5 +157,55 @@ describe("digest assembly", () => {
     expect(view?.id).toBe(secondId);
     expect(view?.items).toHaveLength(1);
     expect(view?.items[0]?.title).toContain("Container style queries");
+  });
+});
+
+describe("delivery records (§10)", () => {
+  const assembleOne = async (): Promise<string> => {
+    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    await ingestCandidates(sql, [candidate({})]);
+    const digestId = await assembleDigest(sql, subscriberId);
+    if (digestId === null) throw new Error("expected a digest");
+    return digestId;
+  };
+
+  it("a digest awaits delivery until the channel has sent it", async () => {
+    const digestId = await assembleOne();
+    expect(await digestsAwaitingDelivery(sql, "email")).toEqual([
+      { digestId, email: "operator@example.com" },
+    ]);
+
+    const view = await getDigest(sql, digestId);
+    expect(view?.items[0]?.title).toBe("lh unit is now Baseline widely available");
+
+    await recordDelivery(sql, digestId, "email", { status: "sent" });
+    expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
+  });
+
+  it("a failed attempt keeps the digest awaiting, with the error on record", async () => {
+    const digestId = await assembleOne();
+    await recordDelivery(sql, digestId, "email", { status: "failed", error: "ECONNREFUSED" });
+    expect(await digestsAwaitingDelivery(sql, "email")).toEqual([
+      { digestId, email: "operator@example.com" },
+    ]);
+
+    await recordDelivery(sql, digestId, "email", { status: "sent" });
+    expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
+
+    const attempts = await sql<{ status: string; error: string | null }[]>`
+      select status, error from delivery where digest_id = ${digestId} order by attempted_at
+    `;
+    expect(attempts).toMatchObject([
+      { status: "failed", error: "ECONNREFUSED" },
+      { status: "sent", error: null },
+    ]);
+  });
+
+  it("each channel is tracked independently", async () => {
+    const digestId = await assembleOne();
+    await recordDelivery(sql, digestId, "email", { status: "sent" });
+    expect(await digestsAwaitingDelivery(sql, "webhook")).toEqual([
+      { digestId, email: "operator@example.com" },
+    ]);
   });
 });
