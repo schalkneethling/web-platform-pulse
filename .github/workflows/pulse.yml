@@ -14,6 +14,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run src/cli/index.ts
         env:
+          # Lifts the unauthenticated api.github.com rate limit for the
+          # Deno and Bun release lookups.
+          GITHUB_TOKEN: ${{ github.token }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PULSE_SMTP_URL: ${{ secrets.PULSE_SMTP_URL }}
           PULSE_SUBSCRIBER_EMAIL: ${{ secrets.PULSE_SUBSCRIBER_EMAIL }}

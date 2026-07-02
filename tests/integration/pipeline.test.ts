@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createBrowserReleasesAdapter } from "../../src/adapters/browser-releases.ts";
+import { createRuntimeReleasesAdapter } from "../../src/adapters/runtime-releases.ts";
 import { createWebFeaturesAdapter } from "../../src/adapters/web-features.ts";
 import { runPipeline } from "../../src/cli/pipeline.ts";
 import type { SourceAdapter } from "../../src/core/adapter.ts";
 import type { BrowserRelease } from "../../src/core/browser-releases/diff.ts";
+import type { RuntimeRelease } from "../../src/core/runtime-releases/diff.ts";
 import type { WebFeaturesData } from "../../src/core/web-features/diff.ts";
 import { connect } from "../../src/store/db.ts";
 import { getLatestDigest } from "../../src/store/store.ts";
@@ -26,6 +28,13 @@ const browserReleasesAdapter = (fixture: string) =>
   createBrowserReleasesAdapter({
     fetchReleases: () =>
       Promise.resolve(loadFixture<BrowserRelease[]>("browser-releases", fixture)),
+    now: () => NOW,
+  });
+
+const runtimeReleasesAdapter = (fixture: string) =>
+  createRuntimeReleasesAdapter({
+    fetchReleases: () =>
+      Promise.resolve(loadFixture<RuntimeRelease[]>("runtime-releases", fixture)),
     now: () => NOW,
   });
 
@@ -72,22 +81,29 @@ describe("runPipeline", () => {
     expect(await sql`select count(*)::int as n from digest`).toMatchObject([{ n: 1 }]);
   });
 
-  it("both sources contribute to one digest, browsers grouped after platform work", async () => {
-    await run([webFeaturesAdapter("old.json"), browserReleasesAdapter("old.json")]);
-    const second = await run([webFeaturesAdapter("new.json"), browserReleasesAdapter("new.json")]);
-    expect(second.ingest.created).toBe(7);
+  it("all sources contribute to one digest: platform work, then browsers, then runtimes", async () => {
+    const adapters = (fixture: string) => [
+      webFeaturesAdapter(fixture),
+      browserReleasesAdapter(fixture),
+      runtimeReleasesAdapter(fixture),
+    ];
+    await run(adapters("old.json"));
+    const second = await run(adapters("new.json"));
+    expect(second.ingest.created).toBe(9);
     expect(second.sourceFailures).toEqual([]);
 
     const subscriber = await sql<{ id: string }[]>`select id from subscriber`;
     const digest = await getLatestDigest(sql, subscriber[0]!.id);
-    expect(digest?.items).toHaveLength(7);
+    expect(digest?.items).toHaveLength(9);
 
     const types = new Set(digest?.items.map((i) => i.type));
     expect(types).toContain("baseline-change");
     expect(types).toContain("browser-release");
+    expect(types).toContain("runtime-release");
 
     const themes = digest!.items.map((i) => i.taxonomy[0]);
     expect(themes.indexOf("browser")).toBeGreaterThan(themes.lastIndexOf("css"));
+    expect(themes.indexOf("runtime")).toBeGreaterThan(themes.lastIndexOf("browser"));
   });
 
   it("a failing source is skipped without blocking the others", async () => {
