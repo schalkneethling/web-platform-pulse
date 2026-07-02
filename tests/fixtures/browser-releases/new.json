@@ -1,0 +1,20 @@
+[
+  {
+    "browser": "chrome",
+    "version": "149.0.7827.201",
+    "releasedAt": "2026-06-08",
+    "url": "https://developer.chrome.com/release-notes/149"
+  },
+  {
+    "browser": "firefox",
+    "version": "152.0",
+    "releasedAt": null,
+    "url": "https://www.mozilla.org/firefox/152.0/releasenotes/"
+  },
+  {
+    "browser": "safari",
+    "version": "26.1",
+    "releasedAt": "2026-05-13",
+    "url": "https://developer.apple.com/news/releases/?id=05132026a"
+  }
+]

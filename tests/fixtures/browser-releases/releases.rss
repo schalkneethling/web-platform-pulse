@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<title>Releases - Apple Developer</title>
+<link>https://developer.apple.com/news/</link>
+<description>Apple Developer News and Updates feed provided by Apple, Inc.</description>
+<item>
+<title>iOS 26.6 beta 3 (23G5052d)</title>
+<link>https://developer.apple.com/news/releases/?id=06292026d</link>
+<guid>https://developer.apple.com/news/releases/?id=06292026d</guid>
+<pubDate>Mon, 29 Jun 2026 10:00:00 PDT</pubDate>
+</item>
+<item>
+<title>Safari Technology Preview 231</title>
+<link>https://developer.apple.com/news/releases/?id=06252026a</link>
+<guid>https://developer.apple.com/news/releases/?id=06252026a</guid>
+<pubDate>Thu, 25 Jun 2026 10:00:00 PDT</pubDate>
+</item>
+<item>
+<title>Safari 26.2 beta (26621.1.4.2)</title>
+<link>https://developer.apple.com/news/releases/?id=06222026b</link>
+<guid>https://developer.apple.com/news/releases/?id=06222026b</guid>
+<pubDate>Mon, 22 Jun 2026 10:00:00 PDT</pubDate>
+</item>
+<item>
+<title>Safari 26.1 (26620.2.5.11.5)</title>
+<link>https://developer.apple.com/news/releases/?id=06152026c</link>
+<guid>https://developer.apple.com/news/releases/?id=06152026c</guid>
+<pubDate>Mon, 15 Jun 2026 10:00:00 PDT</pubDate>
+</item>
+</channel>
+</rss>

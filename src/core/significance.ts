@@ -23,7 +23,16 @@ export const scoreSignificance = (event: CandidateEvent): number => {
     }
     case "spec-change":
       return 0.6;
-    case "browser-release":
+    case "browser-release": {
+      const majorOf = (value: unknown): string | null => {
+        const version = (value as { version?: unknown } | null)?.version;
+        return typeof version === "string" ? (version.split(".")[0] ?? null) : null;
+      };
+      const before = majorOf(event.before);
+      const after = majorOf(event.after);
+      if (before === null || after === null) return 0.5;
+      return before === after ? 0.4 : 0.7;
+    }
     case "editorial":
       return 0.5;
   }

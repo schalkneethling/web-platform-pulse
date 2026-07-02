@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { MAILPIT_API_URL, MAILPIT_SMTP_URL } from "../../scripts/dev-mail.ts";
+import { createWebFeaturesAdapter } from "../../src/adapters/web-features.ts";
 import { runPipeline } from "../../src/cli/pipeline.ts";
 import type { DeliveryChannel } from "../../src/core/delivery.ts";
 import type { WebFeaturesData } from "../../src/core/web-features/diff.ts";
@@ -34,8 +35,12 @@ const brokenChannel = createEmailChannel({
 
 const run = (fixture: string, channels: DeliveryChannel[]) =>
   runPipeline(sql, {
-    fetchData: () => Promise.resolve(load(fixture)),
-    now: () => new Date("2026-06-10T12:00:00Z"),
+    adapters: [
+      createWebFeaturesAdapter({
+        fetchData: () => Promise.resolve(load(fixture)),
+        now: () => new Date("2026-06-10T12:00:00Z"),
+      }),
+    ],
     subscriberEmail: "operator@example.com",
     channels,
   });

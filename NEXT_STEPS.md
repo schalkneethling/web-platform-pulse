@@ -15,12 +15,12 @@ email delivery to your inbox on a daily schedule. No code changes are required �
 
 ### Stack
 
-| Concern | Service | Cost |
-|---|---|---|
-| Postgres | Supabase free tier | Free |
-| Email transport | Resend free tier | Free (3k/month) |
-| Scheduler | GitHub Actions cron | Free |
-| Reader SPA | Defer — email is the proof | — |
+| Concern         | Service                    | Cost            |
+| --------------- | -------------------------- | --------------- |
+| Postgres        | Supabase free tier         | Free            |
+| Email transport | Resend free tier           | Free (3k/month) |
+| Scheduler       | GitHub Actions cron        | Free            |
+| Reader SPA      | Defer — email is the proof | —               |
 
 ### Step 1 — Supabase project
 
@@ -53,8 +53,8 @@ name: Pulse
 
 on:
   schedule:
-    - cron: "0 7 * * *"   # 07:00 UTC daily
-  workflow_dispatch:        # manual trigger for testing
+    - cron: "0 7 * * *" # 07:00 UTC daily
+  workflow_dispatch: # manual trigger for testing
 
 jobs:
   run:
@@ -172,6 +172,7 @@ path:
 pipeline survives without a GitHub account and has retry logic.
 
 Options, in order of effort:
+
 - **Supabase Edge Function + pg_cron** — keeps everything inside Supabase;
   zero external services.
 - **Cloudflare Worker + Cron Trigger** — free tier, runs Bun-compatible code,

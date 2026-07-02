@@ -27,6 +27,23 @@ describe("scoreSignificance", () => {
     expect(low).toBeGreaterThan(support);
   });
 
+  it("ranks browser releases major above patch, neutral when unversioned", () => {
+    const browserRelease = (before: unknown, after: unknown) =>
+      scoreSignificance(
+        candidate({
+          type: "browser-release",
+          subject: { kind: "browser", name: "chrome", version: "149.0.7827.201" },
+          before,
+          after,
+        }),
+      );
+    const major = browserRelease({ version: "148.0.7800.100" }, { version: "149.0.7827.201" });
+    const patch = browserRelease({ version: "149.0.7827.200" }, { version: "149.0.7827.201" });
+    const unknown = browserRelease(null, { version: "149.0.7827.201" });
+    expect(major).toBeGreaterThan(unknown);
+    expect(unknown).toBeGreaterThan(patch);
+  });
+
   it("ranks runtime releases major above minor above patch", () => {
     const release = (version: string) =>
       scoreSignificance(
@@ -44,6 +61,7 @@ describe("scoreSignificance", () => {
       candidate({}),
       candidate({ type: "spec-change" }),
       candidate({ type: "editorial" }),
+      candidate({ type: "browser-release", after: { version: "not-semver" } }),
       candidate({
         type: "runtime-release",
         subject: { kind: "runtime", name: "bun", version: "nightly" },

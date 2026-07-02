@@ -6,6 +6,7 @@ const THEME_LABELS: Record<string, string> = {
   html: "HTML",
   javascript: "JavaScript",
   api: "Web APIs",
+  browser: "Browser Releases",
   runtime: "Runtimes",
 };
 
