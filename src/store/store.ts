@@ -184,27 +184,36 @@ const eventsWithProvenance = async (
 };
 
 /**
- * Slice 1 digest assembly (§9, with the §16 "since last run" shortcut):
- * batch every matched event not yet delivered to this subscriber into one
- * digest. Cadence-window batching replaces the shortcut in slice 5.
+ * Digest assembly (§9, with the §16 "since last run" shortcut): batch
+ * every matched event not yet delivered to this subscriber into one
+ * digest. An event matches when it clears the subscription's
+ * significance floor and, if the subscription names taxonomies, shares
+ * one. Cadence-window batching replaces the shortcut in slice 4.
  */
 export const assembleDigest = async (sql: Sql, subscriberId: string): Promise<string | null> => {
   return sql.begin(async (tx) => {
+    const subscription = await tx<
+      { cadence: string; taxonomies: string[] | null; significance_floor: number }[]
+    >`
+      select cadence, taxonomies, significance_floor
+      from subscription where subscriber_id = ${subscriberId} limit 1
+    `;
+    const cadence = subscription[0]?.cadence ?? "daily";
+    const taxonomies = subscription[0]?.taxonomies ?? [];
+    const floor = subscription[0]?.significance_floor ?? 0;
+
     const pending = await tx<ChangeEventRow[]>`
       select * from change_event
-      where id not in (
-        select di.event_id from digest_item di
-        join digest d on di.digest_id = d.id
-        where d.subscriber_id = ${subscriberId}
-      )
+      where significance >= ${floor}
+        and (cardinality(${taxonomies}::text[]) = 0 or taxonomy && ${taxonomies}::text[])
+        and id not in (
+          select di.event_id from digest_item di
+          join digest d on di.digest_id = d.id
+          where d.subscriber_id = ${subscriberId}
+        )
       order by first_observed_at
     `;
     if (pending.length === 0) return null;
-
-    const subscription = await tx<{ cadence: string }[]>`
-      select cadence from subscription where subscriber_id = ${subscriberId} limit 1
-    `;
-    const cadence = subscription[0]?.cadence ?? "daily";
 
     const previous = await tx<{ window_end: Date | null }[]>`
       select max(window_end) as window_end from digest where subscriber_id = ${subscriberId}
