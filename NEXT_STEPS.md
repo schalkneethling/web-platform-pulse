@@ -40,8 +40,10 @@ email delivery to your inbox on a daily schedule. No code changes are required �
    `onboarding@resend.dev` address for initial testing.
 3. Create an API key. Your SMTP URL is:
    ```
-   smtp://resend:YOUR_API_KEY@smtp.resend.com:465
+   smtps://resend:YOUR_API_KEY@smtp.resend.com:465
    ```
+   The `smtps://` scheme matters: port 465 expects TLS from the first byte,
+   and a plain `smtp://` URL never completes the handshake.
 4. Save this as `PULSE_SMTP_URL` — you will need it in Step 3.
 
 ### Step 3 — GitHub Actions workflow

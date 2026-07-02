@@ -37,6 +37,13 @@ export interface PipelineSummary {
 }
 
 /**
+ * Transport errors can echo a connection URL whose userinfo carries
+ * credentials (the SMTP password is an API key); strip that before the
+ * text reaches shared CI logs.
+ */
+const scrubCredentials = (message: string): string => message.replace(/\/\/[^/@\s]+@/g, "//***@");
+
+/**
  * Deliver every digest a channel has not yet sent (§10) — not just this
  * run's digest, so a run with nothing new still retries earlier failures.
  */
@@ -48,6 +55,12 @@ const deliverPending = async (sql: Sql, channels: DeliveryChannel[]): Promise<De
       if (digest === null) continue;
       const result = await channel.send(digest, { email: pending.email });
       await recordDelivery(sql, pending.digestId, channel.id, result);
+      if (result.status === "failed") {
+        console.error(
+          `delivery of digest ${pending.digestId} via ${channel.id} failed: ` +
+            scrubCredentials(result.error),
+        );
+      }
       summary[result.status] += 1;
     }
   }

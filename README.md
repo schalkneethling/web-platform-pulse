@@ -83,7 +83,8 @@ The prototype runs on free tiers end to end — see `NEXT_STEPS.md` for the full
 walkthrough and what comes next.
 
 - **Supabase** hosts Postgres; apply `supabase/migrations/` in the SQL editor.
-- **Resend** provides SMTP: `smtp://resend:API_KEY@smtp.resend.com:465`.
+- **Resend** provides SMTP: `smtps://resend:API_KEY@smtp.resend.com:465` (the
+  `smtps://` scheme matters — port 465 expects TLS from the first byte).
 - **GitHub Actions** (`.github/workflows/pulse.yml`) runs the pipeline daily at
   07:00 UTC, with `workflow_dispatch` for manual runs.
 
