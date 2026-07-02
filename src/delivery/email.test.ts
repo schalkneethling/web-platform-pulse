@@ -61,6 +61,50 @@ describe("renderDigestEmail", () => {
     expect(text).toContain("https://webstatus.dev/features/style-queries");
   });
 
+  it("groups items under theme headings in digest order", () => {
+    const { html, text } = renderDigestEmail(
+      digest([
+        event("lh", { taxonomy: ["css"] }),
+        event("chrome", {
+          type: "browser-release",
+          title: "Chrome Canary 152.0.7925.0 released",
+          taxonomy: ["browser"],
+        }),
+      ]),
+    );
+
+    expect(html.indexOf("<h2>CSS</h2>")).toBeGreaterThan(-1);
+    expect(html.indexOf("<h2>CSS</h2>")).toBeLessThan(html.indexOf("<h2>Browser Releases</h2>"));
+    expect(html.indexOf("<h2>Browser Releases</h2>")).toBeLessThan(
+      html.indexOf("Chrome Canary 152.0.7925.0 released"),
+    );
+    expect(text).toContain("# Browser Releases");
+  });
+
+  it("shows the covered window, change dates, and source-titled links", () => {
+    const { html, text } = renderDigestEmail(
+      digest([
+        event("lh", {
+          title: "lh is now Baseline widely available",
+          occurredAt: "2026-05-21",
+          provenance: [
+            {
+              sourceId: "web-features",
+              url: "https://webstatus.dev/features/lh",
+              title: "lh unit",
+              observedAt: "2026-06-10T00:00:00Z",
+            },
+          ],
+        }),
+      ]),
+    );
+
+    expect(html).toContain("covering 9 June 2026 to 10 June 2026");
+    expect(html).toContain("Changed on 21 May 2026");
+    expect(html).toContain('<a href="https://webstatus.dev/features/lh">lh unit</a>');
+    expect(text).toContain("Changed on 21 May 2026");
+  });
+
   it("escapes markup in titles so content cannot inject HTML", () => {
     const { html } = renderDigestEmail(
       digest([event("x", { title: 'selector <script>"&"</script>' })]),

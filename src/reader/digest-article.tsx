@@ -1,35 +1,5 @@
-import type { DigestView } from "../core/digest.ts";
+import { groupByTheme, THEME_LABELS, type DigestView } from "../core/digest.ts";
 import type { ChangeEvent } from "../core/types.ts";
-
-const THEME_LABELS: Record<string, string> = {
-  css: "CSS",
-  html: "HTML",
-  javascript: "JavaScript",
-  api: "Web APIs",
-  browser: "Browser Releases",
-  runtime: "Runtimes",
-};
-
-const theme = (event: ChangeEvent): string => event.taxonomy[0] ?? "api";
-
-interface ThemeGroup {
-  theme: string;
-  items: ChangeEvent[];
-}
-
-/** Items arrive in presentation order (§9); grouping is by consecutive theme. */
-const groupByTheme = (items: ChangeEvent[]): ThemeGroup[] => {
-  const groups: ThemeGroup[] = [];
-  for (const item of items) {
-    const last = groups.at(-1);
-    if (last && last.theme === theme(item)) {
-      last.items.push(item);
-    } else {
-      groups.push({ theme: theme(item), items: [item] });
-    }
-  }
-  return groups;
-};
 
 const formatDate = (iso: string): string =>
   new Date(iso).toLocaleDateString("en-GB", { dateStyle: "long" });

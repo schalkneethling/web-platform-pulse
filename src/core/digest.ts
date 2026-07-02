@@ -12,11 +12,40 @@ export interface DigestView {
 /** Theme order for presentation: platform work first, browsers and runtimes last. */
 const THEME_ORDER = ["css", "html", "javascript", "api", "browser", "runtime"];
 
-const theme = (event: ChangeEvent): string => event.taxonomy[0] ?? "api";
+/** Presentation labels shared by every renderer of a digest. */
+export const THEME_LABELS: Record<string, string> = {
+  css: "CSS",
+  html: "HTML",
+  javascript: "JavaScript",
+  api: "Web APIs",
+  browser: "Browser Releases",
+  runtime: "Runtimes",
+};
+
+export const themeOf = (event: ChangeEvent): string => event.taxonomy[0] ?? "api";
 
 const themeRank = (event: ChangeEvent): number => {
-  const rank = THEME_ORDER.indexOf(theme(event));
+  const rank = THEME_ORDER.indexOf(themeOf(event));
   return rank === -1 ? THEME_ORDER.length : rank;
+};
+
+export interface ThemeGroup {
+  theme: string;
+  items: ChangeEvent[];
+}
+
+/** Items arrive in presentation order (§9); grouping is by consecutive theme. */
+export const groupByTheme = (items: ChangeEvent[]): ThemeGroup[] => {
+  const groups: ThemeGroup[] = [];
+  for (const item of items) {
+    const last = groups.at(-1);
+    if (last && last.theme === themeOf(item)) {
+      last.items.push(item);
+    } else {
+      groups.push({ theme: themeOf(item), items: [item] });
+    }
+  }
+  return groups;
 };
 
 /**
