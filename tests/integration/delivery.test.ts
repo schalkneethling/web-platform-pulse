@@ -43,6 +43,8 @@ const run = (fixture: string, channels: DeliveryChannel[]) =>
     ],
     subscriberEmail: "operator@example.com",
     channels,
+    // A now a full window ahead lets the daily window close for assembly.
+    now: () => new Date(Date.now() + 25 * 60 * 60 * 1000),
   });
 
 interface InboxMessage {
@@ -102,7 +104,7 @@ describe("email delivery", () => {
     expect((await inbox()).total).toBe(0);
 
     const retry = await run("new.json", [emailChannel]);
-    expect(retry.digestId).toBeNull();
+    expect(retry.digestIds).toEqual([]);
     expect(retry.deliveries).toEqual({ sent: 1, failed: 0 });
     expect((await inbox()).total).toBe(1);
   });

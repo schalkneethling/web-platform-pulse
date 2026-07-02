@@ -183,14 +183,26 @@ const eventsWithProvenance = async (
   return events;
 };
 
+/** Cadence windows (§9): how long each digest window spans. */
+const CADENCE_PERIOD_MS: Record<string, number> = {
+  daily: 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+};
+
 /**
- * Digest assembly (§9, with the §16 "since last run" shortcut): batch
- * every matched event not yet delivered to this subscriber into one
- * digest. An event matches when it clears the subscription's
- * significance floor and, if the subscription names taxonomies, shares
- * one. Cadence-window batching replaces the shortcut in slice 4.
+ * Digest assembly (§9): cut the next elapsed cadence window that holds
+ * matched events. Windows chain from the previous digest's window_end
+ * (or the first matched event); an open window is never cut early, and
+ * elapsed windows with nothing matched are skipped without a digest.
+ * An event matches when it clears the subscription's significance floor
+ * and, if the subscription names taxonomies, shares one. Callers loop
+ * until null to catch up across multiple elapsed windows.
  */
-export const assembleDigest = async (sql: Sql, subscriberId: string): Promise<string | null> => {
+export const assembleDigest = async (
+  sql: Sql,
+  subscriberId: string,
+  now: Date = new Date(),
+): Promise<string | null> => {
   return sql.begin(async (tx) => {
     const subscription = await tx<
       { cadence: string; taxonomies: string[] | null; significance_floor: number }[]
@@ -201,40 +213,63 @@ export const assembleDigest = async (sql: Sql, subscriberId: string): Promise<st
     const cadence = subscription[0]?.cadence ?? "daily";
     const taxonomies = subscription[0]?.taxonomies ?? [];
     const floor = subscription[0]?.significance_floor ?? 0;
+    const period = CADENCE_PERIOD_MS[cadence] ?? CADENCE_PERIOD_MS["daily"]!;
 
-    const pending = await tx<ChangeEventRow[]>`
-      select * from change_event
-      where significance >= ${floor}
-        and (cardinality(${taxonomies}::text[]) = 0 or taxonomy && ${taxonomies}::text[])
-        and id not in (
-          select di.event_id from digest_item di
-          join digest d on di.digest_id = d.id
-          where d.subscriber_id = ${subscriberId}
-        )
-      order by first_observed_at
+    const matches = () => tx`
+      significance >= ${floor}
+      and (cardinality(${taxonomies}::text[]) = 0 or taxonomy && ${taxonomies}::text[])
+      and id not in (
+        select di.event_id from digest_item di
+        join digest d on di.digest_id = d.id
+        where d.subscriber_id = ${subscriberId}
+      )
     `;
-    if (pending.length === 0) return null;
 
     const previous = await tx<{ window_end: Date | null }[]>`
       select max(window_end) as window_end from digest where subscriber_id = ${subscriberId}
     `;
-    const windowStart = previous[0]?.window_end ?? pending[0]!.first_observed_at;
-
-    const ordered = orderForDigest(await eventsWithProvenance(tx, pending));
-
-    const digest = await tx<{ id: string }[]>`
-      insert into digest (subscriber_id, cadence, window_start, window_end)
-      values (${subscriberId}, ${cadence}, ${windowStart}, now())
-      returning id
-    `;
-    const digestId = digest[0]!.id;
-    for (const [position, event] of ordered.entries()) {
-      await tx`
-        insert into digest_item (digest_id, event_id, position)
-        values (${digestId}, ${event.id}, ${position})
+    let windowStart: Date | null = previous[0]?.window_end ?? null;
+    if (windowStart === null) {
+      const earliest = await tx<{ first_observed_at: Date }[]>`
+        select first_observed_at from change_event
+        where ${matches()}
+        order by first_observed_at limit 1
       `;
+      windowStart = earliest[0]?.first_observed_at ?? null;
+      if (windowStart === null) return null;
     }
-    return digestId;
+
+    for (;;) {
+      const windowEnd: Date = new Date(windowStart.getTime() + period);
+      if (windowEnd.getTime() > now.getTime()) return null;
+
+      const pending = await tx<ChangeEventRow[]>`
+        select * from change_event
+        where ${matches()}
+          and first_observed_at >= ${windowStart} and first_observed_at < ${windowEnd}
+        order by first_observed_at
+      `;
+      if (pending.length === 0) {
+        windowStart = windowEnd;
+        continue;
+      }
+
+      const ordered = orderForDigest(await eventsWithProvenance(tx, pending));
+
+      const digest = await tx<{ id: string }[]>`
+        insert into digest (subscriber_id, cadence, window_start, window_end)
+        values (${subscriberId}, ${cadence}, ${windowStart}, ${windowEnd})
+        returning id
+      `;
+      const digestId = digest[0]!.id;
+      for (const [position, event] of ordered.entries()) {
+        await tx`
+          insert into digest_item (digest_id, event_id, position)
+          values (${digestId}, ${event.id}, ${position})
+        `;
+      }
+      return digestId;
+    }
   });
 };
 

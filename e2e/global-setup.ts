@@ -22,6 +22,8 @@ export default async function globalSetup(): Promise<void> {
       await runPipeline(sql, {
         adapters: [createWebFeaturesAdapter({ fetchData: () => Promise.resolve(load(fixture)) })],
         subscriberEmail: "operator@example.com",
+        // Windows cut only once they elapse; the seed pretends to run a day later.
+        now: () => new Date(Date.now() + 25 * 60 * 60 * 1000),
       });
     }
   } finally {
