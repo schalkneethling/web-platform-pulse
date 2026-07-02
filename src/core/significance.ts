@@ -24,6 +24,11 @@ export const scoreSignificance = (event: CandidateEvent): number => {
     case "spec-change":
       return 0.6;
     case "browser-release": {
+      // Pre-release churn (canary and nightly ship daily) sinks to the
+      // bottom of the group; only stable releases rank by version jump.
+      const channel = (event.after as { channel?: unknown }).channel;
+      if (channel === "canary" || channel === "nightly" || channel === "dev") return 0.2;
+      if (channel === "beta" || channel === "preview") return 0.3;
       const majorOf = (value: unknown): string | null => {
         const version = (value as { version?: unknown } | null)?.version;
         return typeof version === "string" ? (version.split(".")[0] ?? null) : null;

@@ -18,45 +18,83 @@ const NOW = new Date("2026-06-10T12:00:00Z");
 
 describe("parseChromeReleases", () => {
   it("takes the newest stable release with its milestone notes URL", () => {
-    expect(parseChromeReleases(JSON.parse(fixture("chromium-dash.json")))).toEqual({
+    expect(parseChromeReleases(JSON.parse(fixture("chromium-dash.json")), "stable")).toEqual({
       browser: "chrome",
+      channel: "stable",
       version: "149.0.7827.201",
       releasedAt: "2026-06-24",
       url: "https://developer.chrome.com/release-notes/149",
     });
   });
 
+  it("points non-stable channels at the releases dashboard", () => {
+    const release = parseChromeReleases(JSON.parse(fixture("chromium-dash.json")), "canary");
+    expect(release).toMatchObject({
+      channel: "canary",
+      url: "https://chromiumdash.appspot.com/releases?platform=Windows",
+    });
+  });
+
   it("returns null for an empty payload", () => {
-    expect(parseChromeReleases([])).toBeNull();
+    expect(parseChromeReleases([], "stable")).toBeNull();
   });
 });
 
 describe("parseFirefoxVersions", () => {
-  it("takes the latest stable version, undated", () => {
-    expect(parseFirefoxVersions(JSON.parse(fixture("firefox-versions.json")))).toEqual({
-      browser: "firefox",
-      version: "152.0.4",
-      releasedAt: null,
-      url: "https://www.mozilla.org/firefox/152.0.4/releasenotes/",
-    });
+  it("takes stable, beta and nightly versions, undated", () => {
+    expect(parseFirefoxVersions(JSON.parse(fixture("firefox-versions.json")))).toEqual([
+      {
+        browser: "firefox",
+        channel: "stable",
+        version: "152.0.4",
+        releasedAt: null,
+        url: "https://www.mozilla.org/firefox/152.0.4/releasenotes/",
+      },
+      {
+        browser: "firefox",
+        channel: "beta",
+        version: "153.0b7",
+        releasedAt: null,
+        url: "https://www.mozilla.org/firefox/153.0beta/releasenotes/",
+      },
+      {
+        browser: "firefox",
+        channel: "nightly",
+        version: "154.0a1",
+        releasedAt: null,
+        url: "https://www.mozilla.org/firefox/nightly/notes/",
+      },
+    ]);
   });
 });
 
 describe("parseSafariFeed", () => {
-  it("skips betas, Technology Previews and other OS items to find stable Safari", () => {
-    expect(parseSafariFeed(fixture("releases.rss"))).toEqual({
+  it("takes the latest item per channel: stable, beta and Technology Preview", () => {
+    const releases = parseSafariFeed(fixture("releases.rss"));
+    const byChannel = new Map(releases.map((release) => [release.channel, release]));
+    expect(byChannel.get("stable")).toEqual({
       browser: "safari",
+      channel: "stable",
       version: "26.1",
       releasedAt: "2026-06-15",
       url: "https://developer.apple.com/news/releases/?id=06152026c",
     });
+    expect(byChannel.get("beta")).toMatchObject({
+      version: "26.2 beta",
+      releasedAt: "2026-06-22",
+    });
+    expect(byChannel.get("preview")).toMatchObject({
+      version: "231",
+      releasedAt: "2026-06-25",
+    });
   });
 
-  it("returns null when the feed carries no stable Safari item", () => {
+  it("other Apple OS items never match", () => {
     const xml = `<?xml version="1.0"?><rss><channel>
       <item><title>iOS 26.6 beta 3 (23G5052d)</title></item>
+      <item><title>macOS 26.6 beta 3 (25G5052e)</title></item>
     </channel></rss>`;
-    expect(parseSafariFeed(xml)).toBeNull();
+    expect(parseSafariFeed(xml)).toEqual([]);
   });
 });
 
@@ -68,7 +106,12 @@ describe("browser-releases adapter", () => {
     });
     const { events, cursor } = await adapter.run(null);
     expect(events).toEqual([]);
-    expect(cursor).toEqual({ chrome: "148.0.7800.100", firefox: "151.0", safari: "26.1" });
+    expect(cursor).toEqual({
+      "chrome:stable": "148.0.7800.100",
+      "firefox:stable": "151.0",
+      "firefox:nightly": "153.0a1",
+      "safari:stable": "26.1",
+    });
   });
 
   it("emits the delta between cursor and fetched releases on subsequent runs", async () => {
@@ -83,18 +126,22 @@ describe("browser-releases adapter", () => {
     }).run(seeded.cursor);
 
     expect(events.map((e) => e.dedupeKey).sort()).toEqual([
-      "browser-releases:release:chrome:149.0.7827.201",
-      "browser-releases:release:firefox:152.0",
+      "browser-releases:release:chrome:stable:149.0.7827.201",
+      "browser-releases:release:firefox:nightly:154.0a1",
+      "browser-releases:release:firefox:stable:152.0",
     ]);
-    expect(cursor.safari).toBe("26.1");
+    expect(cursor["safari:stable"]).toBe("26.1");
   });
 
-  it("a feed yielding no release leaves that browser's cursor untouched", async () => {
+  it("a feed yielding no release leaves that channel's cursor untouched", async () => {
     const adapter = createBrowserReleasesAdapter({
       fetchReleases: () => Promise.resolve(loadReleases("new.json").slice(0, 1)),
       now: () => NOW,
     });
-    const { cursor } = await adapter.run({ chrome: "148.0.7800.100", safari: "26.1" });
-    expect(cursor).toEqual({ chrome: "149.0.7827.201", safari: "26.1" });
+    const { cursor } = await adapter.run({
+      "chrome:stable": "148.0.7800.100",
+      "safari:stable": "26.1",
+    });
+    expect(cursor).toEqual({ "chrome:stable": "149.0.7827.201", "safari:stable": "26.1" });
   });
 });

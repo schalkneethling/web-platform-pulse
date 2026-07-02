@@ -71,12 +71,12 @@ describe("runPipeline", () => {
   it("both sources contribute to one digest, browsers grouped after platform work", async () => {
     await run([webFeaturesAdapter("old.json"), browserReleasesAdapter("old.json")]);
     const second = await run([webFeaturesAdapter("new.json"), browserReleasesAdapter("new.json")]);
-    expect(second.ingest.created).toBe(6);
+    expect(second.ingest.created).toBe(7);
     expect(second.sourceFailures).toEqual([]);
 
     const subscriber = await sql<{ id: string }[]>`select id from subscriber`;
     const digest = await getLatestDigest(sql, subscriber[0]!.id);
-    expect(digest?.items).toHaveLength(6);
+    expect(digest?.items).toHaveLength(7);
 
     const types = new Set(digest?.items.map((i) => i.type));
     expect(types).toContain("baseline-change");
