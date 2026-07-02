@@ -1,6 +1,8 @@
 version: 2
 updates:
-  - package-ecosystem: "npm"
+  # The bun ecosystem updates bun.lock alongside package.json; the npm
+  # ecosystem edits package.json alone, which breaks --frozen-lockfile.
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: "daily"
