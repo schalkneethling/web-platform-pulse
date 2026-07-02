@@ -2,6 +2,7 @@
 //   vp run pulse              pulls live web-features data and release feeds
 //   vp run pulse -- --data tests/fixtures/web-features/new.json
 //   vp run pulse -- --releases tests/fixtures/browser-releases/new.json
+//   vp run pulse -- --runtimes tests/fixtures/runtime-releases/new.json
 //   vp run pulse -- --smtp smtp://localhost:54330   (or PULSE_SMTP_URL)
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -9,8 +10,13 @@ import {
   createBrowserReleasesAdapter,
   fetchBrowserReleases,
 } from "../adapters/browser-releases.ts";
+import {
+  createRuntimeReleasesAdapter,
+  fetchRuntimeReleases,
+} from "../adapters/runtime-releases.ts";
 import { createWebFeaturesAdapter, fetchWebFeaturesData } from "../adapters/web-features.ts";
 import type { BrowserRelease } from "../core/browser-releases/diff.ts";
+import type { RuntimeRelease } from "../core/runtime-releases/diff.ts";
 import type { WebFeaturesData } from "../core/web-features/diff.ts";
 import { createEmailChannel } from "../delivery/email.ts";
 import { createSmtpSender } from "../delivery/smtp.ts";
@@ -21,6 +27,7 @@ const { values } = parseArgs({
   options: {
     data: { type: "string" },
     releases: { type: "string" },
+    runtimes: { type: "string" },
     email: { type: "string" },
     smtp: { type: "string" },
   },
@@ -38,9 +45,15 @@ const fetchReleases = releasesPath
   ? () => Promise.resolve(loadJson<BrowserRelease[]>(releasesPath))
   : fetchBrowserReleases;
 
+const runtimesPath = values.runtimes;
+const fetchRuntimes = runtimesPath
+  ? () => Promise.resolve(loadJson<RuntimeRelease[]>(runtimesPath))
+  : fetchRuntimeReleases;
+
 const adapters = [
   createWebFeaturesAdapter({ fetchData }),
   createBrowserReleasesAdapter({ fetchReleases }),
+  createRuntimeReleasesAdapter({ fetchReleases: fetchRuntimes }),
 ];
 
 const subscriberEmail =
@@ -71,6 +84,11 @@ try {
       `digests: ${summary.digestIds.length > 0 ? summary.digestIds.join(", ") : "none (no closed window)"} | ` +
       `email: ${summary.deliveries.sent} sent, ${summary.deliveries.failed} failed${failures}`,
   );
+  // A broken feed must not stay green: the healthy sources delivered,
+  // but the run fails so the operator notices and the feed gets fixed.
+  if (summary.sourceFailures.length > 0) {
+    process.exitCode = 1;
+  }
 } finally {
   await sql.end();
 }

@@ -1,0 +1,30 @@
+[
+  {
+    "runtime": "node",
+    "line": "current",
+    "version": "26.2.0",
+    "releasedAt": "2026-05-20",
+    "url": "https://nodejs.org/en/blog/release/v26.2.0"
+  },
+  {
+    "runtime": "node",
+    "line": "lts",
+    "version": "24.11.0",
+    "releasedAt": "2026-05-15",
+    "url": "https://nodejs.org/en/blog/release/v24.11.0"
+  },
+  {
+    "runtime": "deno",
+    "line": "stable",
+    "version": "2.8.0",
+    "releasedAt": "2026-05-22",
+    "url": "https://github.com/denoland/deno/releases/tag/v2.8.0"
+  },
+  {
+    "runtime": "bun",
+    "line": "stable",
+    "version": "1.3.13",
+    "releasedAt": "2026-05-13",
+    "url": "https://github.com/oven-sh/bun/releases/tag/bun-v1.3.13"
+  }
+]

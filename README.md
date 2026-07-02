@@ -12,6 +12,7 @@ email and rendered in a small reader app.
 | Chromium Dash                                                   | Chrome releases: Stable, Beta, Dev, Canary                                          |
 | Mozilla product-details                                         | Firefox releases: stable, Beta, Nightly                                             |
 | Apple developer releases RSS                                    | Safari releases: stable, beta, Technology Preview                                   |
+| nodejs.org dist index, GitHub releases                          | Runtime releases: Node.js (Current and LTS), Deno, Bun                              |
 
 ## How it works
 
