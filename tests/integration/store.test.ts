@@ -135,6 +135,59 @@ describe("digest assembly", () => {
     expect(await sql`select count(*)::int as n from digest`).toMatchObject([{ n: 1 }]);
   });
 
+  it("filters by the subscription's taxonomies and significance floor", async () => {
+    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    await sql`
+      update subscription set taxonomies = ${["css"]}, significance_floor = 0.5
+      where subscriber_id = ${subscriberId}
+    `;
+    await ingestCandidates(sql, [
+      // css, significance 0.9: matches
+      candidate({}),
+      // css, significance 0.4: below the floor
+      candidate({
+        type: "browser-support",
+        subject: { kind: "feature", id: "crisp-edges" },
+        title: "Safari 7 supports crisp-edges",
+        before: null,
+        after: { browser: "safari", version: "7" },
+        dedupeKey: "web-features:support:crisp-edges:safari:7",
+        correlationKey: "support:crisp-edges:safari:7",
+      }),
+      // significance 0.9, but not a subscribed taxonomy
+      candidate({
+        subject: { kind: "feature", id: "urlpattern" },
+        title: "URLPattern is now Baseline widely available",
+        taxonomy: ["api"],
+        dedupeKey: "web-features:baseline:urlpattern:low->high",
+        correlationKey: "baseline:urlpattern:high",
+      }),
+    ]);
+
+    const digestId = await assembleDigest(sql, subscriberId);
+    const view = await getLatestDigest(sql, subscriberId);
+    expect(view?.id).toBe(digestId);
+    expect(view?.items.map((i) => i.title)).toEqual(["lh unit is now Baseline widely available"]);
+  });
+
+  it("a subscription without taxonomies matches every theme", async () => {
+    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    await ingestCandidates(sql, [
+      candidate({}),
+      candidate({
+        subject: { kind: "feature", id: "urlpattern" },
+        title: "URLPattern is now Baseline widely available",
+        taxonomy: ["api"],
+        dedupeKey: "web-features:baseline:urlpattern:low->high",
+        correlationKey: "baseline:urlpattern:high",
+      }),
+    ]);
+
+    await assembleDigest(sql, subscriberId);
+    const view = await getLatestDigest(sql, subscriberId);
+    expect(view?.items).toHaveLength(2);
+  });
+
   it("only includes events not already delivered", async () => {
     const subscriberId = await ensureOperator(sql, "operator@example.com");
     await ingestCandidates(sql, [candidate({})]);
