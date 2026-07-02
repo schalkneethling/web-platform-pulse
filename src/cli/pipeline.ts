@@ -48,6 +48,11 @@ const deliverPending = async (sql: Sql, channels: DeliveryChannel[]): Promise<De
       if (digest === null) continue;
       const result = await channel.send(digest, { email: pending.email });
       await recordDelivery(sql, pending.digestId, channel.id, result);
+      if (result.status === "failed") {
+        console.error(
+          `delivery of digest ${pending.digestId} via ${channel.id} failed: ${result.error}`,
+        );
+      }
       summary[result.status] += 1;
     }
   }

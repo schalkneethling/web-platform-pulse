@@ -84,9 +84,9 @@ try {
       `digests: ${summary.digestIds.length > 0 ? summary.digestIds.join(", ") : "none (no closed window)"} | ` +
       `email: ${summary.deliveries.sent} sent, ${summary.deliveries.failed} failed${failures}`,
   );
-  // A broken feed must not stay green: the healthy sources delivered,
-  // but the run fails so the operator notices and the feed gets fixed.
-  if (summary.sourceFailures.length > 0) {
+  // A broken feed or transport must not stay green: everything healthy
+  // already delivered, but the run fails so the operator notices.
+  if (summary.sourceFailures.length > 0 || summary.deliveries.failed > 0) {
     process.exitCode = 1;
   }
 } finally {
