@@ -29,8 +29,12 @@ const browserReleasesAdapter = (fixture: string) =>
     now: () => NOW,
   });
 
+// Events are ingested at the database's real clock; a now a full window
+// ahead lets the daily window close so assembly can cut it.
+const LATER = () => new Date(Date.now() + 25 * 60 * 60 * 1000);
+
 const run = (adapters: SourceAdapter[]) =>
-  runPipeline(sql, { adapters, subscriberEmail: "operator@example.com" });
+  runPipeline(sql, { adapters, subscriberEmail: "operator@example.com", now: LATER });
 
 beforeEach(async () => {
   await sql`truncate change_event, event_source, digest, digest_item, source_state, subscription, subscriber restart identity cascade`;
@@ -44,11 +48,11 @@ describe("runPipeline", () => {
   it("cold-starts silently, then turns the next observation into a digest", async () => {
     const first = await run([webFeaturesAdapter("old.json")]);
     expect(first.candidates).toBe(0);
-    expect(first.digestId).toBeNull();
+    expect(first.digestIds).toEqual([]);
 
     const second = await run([webFeaturesAdapter("new.json")]);
     expect(second.ingest.created).toBe(4);
-    expect(second.digestId).not.toBeNull();
+    expect(second.digestIds).toHaveLength(1);
 
     const subscriber = await sql<{ id: string }[]>`select id from subscriber`;
     const digest = await getLatestDigest(sql, subscriber[0]!.id);
@@ -64,7 +68,7 @@ describe("runPipeline", () => {
     const repeat = await run([webFeaturesAdapter("new.json")]);
     expect(repeat.candidates).toBe(0);
     expect(repeat.ingest).toEqual({ created: 0, correlated: 0, unchanged: 0 });
-    expect(repeat.digestId).toBeNull();
+    expect(repeat.digestIds).toEqual([]);
     expect(await sql`select count(*)::int as n from digest`).toMatchObject([{ n: 1 }]);
   });
 
@@ -97,7 +101,7 @@ describe("runPipeline", () => {
     const summary = await run([webFeaturesAdapter("new.json"), broken]);
     expect(summary.sourceFailures).toEqual(["broken-feed"]);
     expect(summary.ingest.created).toBe(4);
-    expect(summary.digestId).not.toBeNull();
+    expect(summary.digestIds).toHaveLength(1);
 
     const state = await sql<{ source_id: string }[]>`select source_id from source_state`;
     expect(state.map((row) => row.source_id)).toEqual(["web-features"]);

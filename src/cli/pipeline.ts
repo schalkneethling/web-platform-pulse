@@ -19,6 +19,7 @@ export interface PipelineOptions {
   adapters: SourceAdapter[];
   subscriberEmail: string;
   channels?: DeliveryChannel[];
+  now?: () => Date;
 }
 
 export interface DeliverySummary {
@@ -30,7 +31,8 @@ export interface PipelineSummary {
   candidates: number;
   ingest: IngestResult;
   sourceFailures: string[];
-  digestId: string | null;
+  /** One per elapsed cadence window that held events — usually 0 or 1. */
+  digestIds: string[];
   deliveries: DeliverySummary;
 }
 
@@ -84,8 +86,15 @@ export const runPipeline = async (sql: Sql, options: PipelineOptions): Promise<P
     await saveSourceState(sql, sourceId, cursor);
   }
 
-  const digestId = await assembleDigest(sql, subscriberId);
+  const now = options.now ?? (() => new Date());
+  const digestIds: string[] = [];
+  for (;;) {
+    const digestId = await assembleDigest(sql, subscriberId, now());
+    if (digestId === null) break;
+    digestIds.push(digestId);
+  }
+
   const deliveries = await deliverPending(sql, options.channels ?? []);
 
-  return { candidates: candidates.length, ingest, sourceFailures, digestId, deliveries };
+  return { candidates: candidates.length, ingest, sourceFailures, digestIds, deliveries };
 };

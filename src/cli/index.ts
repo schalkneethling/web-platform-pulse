@@ -68,7 +68,7 @@ try {
   console.log(
     `candidates: ${summary.candidates} | created: ${summary.ingest.created}, ` +
       `correlated: ${summary.ingest.correlated}, unchanged: ${summary.ingest.unchanged} | ` +
-      `digest: ${summary.digestId ?? "none (nothing new)"} | ` +
+      `digests: ${summary.digestIds.length > 0 ? summary.digestIds.join(", ") : "none (no closed window)"} | ` +
       `email: ${summary.deliveries.sent} sent, ${summary.deliveries.failed} failed${failures}`,
   );
 } finally {
