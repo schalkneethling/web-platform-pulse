@@ -1,5 +1,5 @@
 import type { DeliveryChannel } from "../core/delivery.ts";
-import type { DigestView } from "../core/digest.ts";
+import { groupByTheme, THEME_LABELS, type DigestView } from "../core/digest.ts";
 import type { ChangeEvent } from "../core/types.ts";
 
 export interface EmailContent {
@@ -23,39 +23,63 @@ const escapeHtml = (value: string): string =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
-const linkLabel = (url: string): string => new URL(url).hostname;
+/** Rendered in UTC so the same digest reads the same everywhere. */
+const formatDate = (iso: string): string =>
+  new Date(iso).toLocaleDateString("en-GB", { dateStyle: "long", timeZone: "UTC" });
 
+const themeLabel = (theme: string): string => THEME_LABELS[theme] ?? theme;
+
+/** Provenance rows carry a human title ("lh unit", "Chrome Canary 152…"). */
 const itemHtml = (event: ChangeEvent): string => {
   const links = event.provenance
-    .map((p) => `<a href="${escapeHtml(p.url)}">${escapeHtml(linkLabel(p.url))}</a>`)
+    .map((p) => `<a href="${escapeHtml(p.url)}">${escapeHtml(p.title)}</a>`)
     .join(", ");
-  return `    <li><strong>${escapeHtml(event.title)}</strong>${links ? ` — ${links}` : ""}</li>`;
+  const meta = [
+    ...(event.occurredAt === null ? [] : [`Changed on ${formatDate(event.occurredAt)}`]),
+    ...(links ? [links] : []),
+  ].join(" — ");
+  return `    <li><strong>${escapeHtml(event.title)}</strong>${meta ? `<br />${meta}` : ""}</li>`;
 };
 
 const itemText = (event: ChangeEvent): string =>
-  [`- ${event.title}`, ...event.provenance.map((p) => `  ${p.url}`)].join("\n");
+  [
+    `- ${event.title}`,
+    ...(event.occurredAt === null ? [] : [`  Changed on ${formatDate(event.occurredAt)}`]),
+    ...event.provenance.map((p) => `  ${p.url}`),
+  ].join("\n");
 
 /**
  * The digest as an email: the same DigestView the reader renders, as
- * semantic HTML with provenance links and a plain-text alternative.
+ * semantic HTML grouped by theme, with a plain-text alternative.
  */
 export const renderDigestEmail = (digest: DigestView): EmailContent => {
   const count = digest.items.length;
   const noun = count === 1 ? "change" : "changes";
   const subject = `Platform Pulse — ${count} ${noun}`;
-  const upTo = digest.windowEnd.slice(0, 10);
+  const window = `${formatDate(digest.windowStart)} to ${formatDate(digest.windowEnd)}`;
+  const groups = groupByTheme(digest.items);
 
   const html = [
     "<h1>Platform Pulse</h1>",
-    `  <p>${count} ${noun} across the web platform, up to ${upTo}.</p>`,
-    "  <ol>",
-    ...digest.items.map(itemHtml),
-    "  </ol>",
+    `  <p>${count} ${noun} across the web platform, covering ${window}.</p>`,
+    ...groups.flatMap((group) => [
+      `  <h2>${escapeHtml(themeLabel(group.theme))}</h2>`,
+      "  <ul>",
+      ...group.items.map(itemHtml),
+      "  </ul>",
+    ]),
   ].join("\n");
 
-  const text = [`Platform Pulse — ${count} ${noun}, up to ${upTo}`, ""]
-    .concat(digest.items.map(itemText))
-    .join("\n");
+  const text = [
+    `Platform Pulse — ${count} ${noun}`,
+    `Covering ${window}`,
+    ...groups.flatMap((group) => [
+      "",
+      `# ${themeLabel(group.theme)}`,
+      "",
+      ...group.items.map(itemText),
+    ]),
+  ].join("\n");
 
   return { subject, text, html };
 };
