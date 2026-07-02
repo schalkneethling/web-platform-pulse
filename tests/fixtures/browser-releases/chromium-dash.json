@@ -1,0 +1,11 @@
+[
+  {
+    "channel": "Stable",
+    "chromium_main_branch_position": 1625079,
+    "milestone": 149,
+    "platform": "Windows",
+    "previous_version": "149.0.7827.200",
+    "time": 1782259200000,
+    "version": "149.0.7827.201"
+  }
+]

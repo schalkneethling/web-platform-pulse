@@ -1,3 +1,4 @@
+import { withinColdStartWindow } from "../cold-start.ts";
 import type { CandidateEvent } from "../types.ts";
 
 export type BaselineValue = "high" | "low" | false;
@@ -36,7 +37,6 @@ export interface IndexedFeature {
 export type FeatureIndex = Record<string, IndexedFeature>;
 
 const SOURCE_ID = "web-features";
-const COLD_START_WINDOW_DAYS = 7;
 
 const BROWSER_LABELS: Record<string, string> = {
   chrome: "Chrome",
@@ -141,14 +141,6 @@ const supportCandidate = (
     correlationKey: `support:${id}:${browser}:${version}`,
     provenance: [{ sourceId: SOURCE_ID, url: featureUrl(id), title: feature.name, observedAt }],
   };
-};
-
-const withinColdStartWindow = (date: string | null, now: Date): boolean => {
-  if (date === null) return false;
-  const occurred = new Date(`${date}T00:00:00Z`).getTime();
-  if (Number.isNaN(occurred)) return false;
-  const windowStart = now.getTime() - COLD_START_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-  return occurred >= windowStart && occurred <= now.getTime();
 };
 
 /**

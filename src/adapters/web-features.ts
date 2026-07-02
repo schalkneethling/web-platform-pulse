@@ -1,4 +1,4 @@
-import type { CandidateEvent } from "../core/types.ts";
+import type { SourceAdapter } from "../core/adapter.ts";
 import {
   deriveIndex,
   diffWebFeatures,
@@ -16,16 +16,6 @@ export interface WebFeaturesAdapterOptions {
   now?: () => Date;
 }
 
-export interface AdapterRunResult {
-  events: CandidateEvent[];
-  cursor: FeatureIndex;
-}
-
-export interface WebFeaturesAdapter {
-  readonly sourceId: string;
-  run(cursor: FeatureIndex | null): Promise<AdapterRunResult>;
-}
-
 export const fetchWebFeaturesData = async (): Promise<WebFeaturesData> => {
   const response = await fetch(WEB_FEATURES_DATA_URL);
   if (!response.ok) {
@@ -36,10 +26,11 @@ export const fetchWebFeaturesData = async (): Promise<WebFeaturesData> => {
 
 export const createWebFeaturesAdapter = (
   options: WebFeaturesAdapterOptions,
-): WebFeaturesAdapter => {
+): SourceAdapter<FeatureIndex> => {
   const now = options.now ?? (() => new Date());
   return {
     sourceId: WEB_FEATURES_SOURCE_ID,
+    kind: "artifact-diff",
     run: async (cursor) => {
       const data = await options.fetchData();
       const next = deriveIndex(data);

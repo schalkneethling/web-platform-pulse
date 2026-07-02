@@ -4,6 +4,7 @@
 // transitions the digest must contain.
 import { readFileSync } from "node:fs";
 import { ensureDatabase } from "../scripts/dev-db.ts";
+import { createWebFeaturesAdapter } from "../src/adapters/web-features.ts";
 import type { WebFeaturesData } from "../src/core/web-features/diff.ts";
 import { runPipeline } from "../src/cli/pipeline.ts";
 import { connect } from "../src/store/db.ts";
@@ -19,7 +20,7 @@ export default async function globalSetup(): Promise<void> {
   try {
     for (const fixture of ["old.json", "new.json"]) {
       await runPipeline(sql, {
-        fetchData: () => Promise.resolve(load(fixture)),
+        adapters: [createWebFeaturesAdapter({ fetchData: () => Promise.resolve(load(fixture)) })],
         subscriberEmail: "operator@example.com",
       });
     }

@@ -1,10 +1,6 @@
-import {
-  createWebFeaturesAdapter,
-  WEB_FEATURES_SOURCE_ID,
-  type WebFeaturesAdapterOptions,
-} from "../adapters/web-features.ts";
+import type { SourceAdapter } from "../core/adapter.ts";
 import type { DeliveryChannel } from "../core/delivery.ts";
-import type { FeatureIndex } from "../core/web-features/diff.ts";
+import type { CandidateEvent } from "../core/types.ts";
 import type { Sql } from "../store/db.ts";
 import {
   assembleDigest,
@@ -19,7 +15,8 @@ import {
   type IngestResult,
 } from "../store/store.ts";
 
-export interface PipelineOptions extends WebFeaturesAdapterOptions {
+export interface PipelineOptions {
+  adapters: SourceAdapter[];
   subscriberEmail: string;
   channels?: DeliveryChannel[];
 }
@@ -32,6 +29,7 @@ export interface DeliverySummary {
 export interface PipelineSummary {
   candidates: number;
   ingest: IngestResult;
+  sourceFailures: string[];
   digestId: string | null;
   deliveries: DeliverySummary;
 }
@@ -55,24 +53,39 @@ const deliverPending = async (sql: Sql, channels: DeliveryChannel[]): Promise<De
 };
 
 /**
- * One idempotent end-to-end run (§12): adapter → correlation/ingest →
- * digest assembly → delivery. The prototype CLI and the e2e seed both
- * call this; the production Worker will run the same function.
+ * One idempotent end-to-end run (§12): adapters → correlation/ingest →
+ * digest assembly → delivery. A failed source is skipped and retried from
+ * its saved cursor next run; it must not block the other sources. The
+ * prototype CLI and the e2e seed both call this; the production Worker
+ * will run the same function.
  */
 export const runPipeline = async (sql: Sql, options: PipelineOptions): Promise<PipelineSummary> => {
-  const adapter = createWebFeaturesAdapter(options);
-
-  await ensureSource(sql, adapter.sourceId, "artifact-diff");
   const subscriberId = await ensureOperator(sql, options.subscriberEmail);
 
-  const cursor = await loadSourceState<FeatureIndex>(sql, WEB_FEATURES_SOURCE_ID);
-  const { events, cursor: nextCursor } = await adapter.run(cursor);
+  const candidates: CandidateEvent[] = [];
+  const cursors: [string, unknown][] = [];
+  const sourceFailures: string[] = [];
 
-  const ingest = await ingestCandidates(sql, events);
-  await saveSourceState(sql, WEB_FEATURES_SOURCE_ID, nextCursor);
+  for (const adapter of options.adapters) {
+    await ensureSource(sql, adapter.sourceId, adapter.kind);
+    const cursor = await loadSourceState(sql, adapter.sourceId);
+    try {
+      const result = await adapter.run(cursor);
+      candidates.push(...result.events);
+      cursors.push([adapter.sourceId, result.cursor]);
+    } catch (error) {
+      console.error(`source ${adapter.sourceId} failed:`, error);
+      sourceFailures.push(adapter.sourceId);
+    }
+  }
+
+  const ingest = await ingestCandidates(sql, candidates);
+  for (const [sourceId, cursor] of cursors) {
+    await saveSourceState(sql, sourceId, cursor);
+  }
 
   const digestId = await assembleDigest(sql, subscriberId);
   const deliveries = await deliverPending(sql, options.channels ?? []);
 
-  return { candidates: events.length, ingest, digestId, deliveries };
+  return { candidates: candidates.length, ingest, sourceFailures, digestId, deliveries };
 };

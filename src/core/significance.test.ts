@@ -27,6 +27,55 @@ describe("scoreSignificance", () => {
     expect(low).toBeGreaterThan(support);
   });
 
+  it("ranks browser releases major above patch, neutral when unversioned", () => {
+    const browserRelease = (before: unknown, after: unknown) =>
+      scoreSignificance(
+        candidate({
+          type: "browser-release",
+          subject: { kind: "browser", name: "chrome", version: "149.0.7827.201" },
+          before,
+          after,
+        }),
+      );
+    const major = browserRelease(
+      { version: "148.0.7800.100", channel: "stable" },
+      { version: "149.0.7827.201", channel: "stable" },
+    );
+    const patch = browserRelease(
+      { version: "149.0.7827.200", channel: "stable" },
+      { version: "149.0.7827.201", channel: "stable" },
+    );
+    const unknown = browserRelease(null, { version: "149.0.7827.201", channel: "stable" });
+    expect(major).toBeGreaterThan(unknown);
+    expect(unknown).toBeGreaterThan(patch);
+  });
+
+  it("sinks pre-release channels below every stable release", () => {
+    const channelRelease = (channel: string) =>
+      scoreSignificance(
+        candidate({
+          type: "browser-release",
+          subject: { kind: "browser", name: "chrome", version: "150.0.1" },
+          before: null,
+          after: { version: "150.0.1", channel },
+        }),
+      );
+    const stablePatch = scoreSignificance(
+      candidate({
+        type: "browser-release",
+        subject: { kind: "browser", name: "chrome", version: "149.0.7827.201" },
+        before: { version: "149.0.7827.200", channel: "stable" },
+        after: { version: "149.0.7827.201", channel: "stable" },
+      }),
+    );
+    for (const channel of ["beta", "preview"]) {
+      expect(channelRelease(channel)).toBeLessThan(stablePatch);
+    }
+    for (const channel of ["dev", "canary", "nightly"]) {
+      expect(channelRelease(channel)).toBeLessThan(channelRelease("beta"));
+    }
+  });
+
   it("ranks runtime releases major above minor above patch", () => {
     const release = (version: string) =>
       scoreSignificance(
@@ -44,6 +93,7 @@ describe("scoreSignificance", () => {
       candidate({}),
       candidate({ type: "spec-change" }),
       candidate({ type: "editorial" }),
+      candidate({ type: "browser-release", after: { version: "not-semver" } }),
       candidate({
         type: "runtime-release",
         subject: { kind: "runtime", name: "bun", version: "nightly" },

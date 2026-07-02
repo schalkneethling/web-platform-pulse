@@ -9,6 +9,7 @@ export type ChangeEventType =
 export type Subject =
   | { kind: "feature"; id: string }
   | { kind: "spec"; shortname: string }
+  | { kind: "browser"; name: "chrome" | "firefox" | "safari"; version: string }
   | { kind: "runtime"; name: "node" | "deno" | "bun"; version: string };
 
 export interface Provenance {

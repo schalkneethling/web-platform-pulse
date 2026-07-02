@@ -1,0 +1,30 @@
+[
+  {
+    "browser": "chrome",
+    "channel": "stable",
+    "version": "148.0.7800.100",
+    "releasedAt": "2026-05-20",
+    "url": "https://developer.chrome.com/release-notes/148"
+  },
+  {
+    "browser": "firefox",
+    "channel": "stable",
+    "version": "151.0",
+    "releasedAt": null,
+    "url": "https://www.mozilla.org/firefox/151.0/releasenotes/"
+  },
+  {
+    "browser": "firefox",
+    "channel": "nightly",
+    "version": "153.0a1",
+    "releasedAt": null,
+    "url": "https://www.mozilla.org/firefox/nightly/notes/"
+  },
+  {
+    "browser": "safari",
+    "channel": "stable",
+    "version": "26.1",
+    "releasedAt": "2026-05-13",
+    "url": "https://developer.apple.com/news/releases/?id=05132026a"
+  }
+]

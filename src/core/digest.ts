@@ -9,8 +9,8 @@ export interface DigestView {
   items: ChangeEvent[];
 }
 
-/** Theme order for presentation: platform work first, runtimes last. */
-const THEME_ORDER = ["css", "html", "javascript", "api", "runtime"];
+/** Theme order for presentation: platform work first, browsers and runtimes last. */
+const THEME_ORDER = ["css", "html", "javascript", "api", "browser", "runtime"];
 
 const theme = (event: ChangeEvent): string => event.taxonomy[0] ?? "api";
 
