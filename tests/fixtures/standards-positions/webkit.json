@@ -1,0 +1,50 @@
+[
+  {
+    "id": "https://github.com/WebKit/standards-positions/issues/353",
+    "position": null,
+    "venues": [],
+    "concerns": [],
+    "topics": [],
+    "title": null,
+    "url": null,
+    "github": null,
+    "issues": null,
+    "explainer": null,
+    "tag": null,
+    "mozilla": null,
+    "bugzilla": null,
+    "radar": null
+  },
+  {
+    "id": "https://github.com/WebKit/standards-positions/issues/1",
+    "position": "support",
+    "venues": ["W3C"],
+    "concerns": ["integration"],
+    "topics": ["web apis", "device apis"],
+    "title": "Gamepad API Trigger-Rumble Extension",
+    "url": "https://w3c.github.io/gamepad/extensions.html",
+    "github": "https://github.com/w3c/gamepad",
+    "issues": "https://github.com/w3c/gamepad/issues/138",
+    "explainer": null,
+    "tag": null,
+    "mozilla": null,
+    "bugzilla": null,
+    "radar": null
+  },
+  {
+    "id": "https://github.com/WebKit/standards-positions/issues/77",
+    "position": null,
+    "venues": ["W3C"],
+    "concerns": [],
+    "topics": ["css"],
+    "title": "CSS Anchor Positioning",
+    "url": "https://drafts.csswg.org/css-anchor-position-1/",
+    "github": "https://github.com/w3c/csswg-drafts",
+    "issues": null,
+    "explainer": null,
+    "tag": null,
+    "mozilla": null,
+    "bugzilla": null,
+    "radar": null
+  }
+]

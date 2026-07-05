@@ -2,6 +2,7 @@ export type ChangeEventType =
   | "baseline-change"
   | "browser-support"
   | "spec-change"
+  | "vendor-position"
   | "browser-release"
   | "runtime-release"
   | "editorial";

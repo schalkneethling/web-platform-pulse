@@ -1,0 +1,38 @@
+[
+  {
+    "vendor": "mozilla",
+    "key": "20",
+    "position": "neutral",
+    "title": "Trusted Types",
+    "specUrl": "https://w3c.github.io/trusted-types/dist/spec/",
+    "issueUrl": "https://github.com/mozilla/standards-positions/issues/20",
+    "topics": ["API"]
+  },
+  {
+    "vendor": "mozilla",
+    "key": "1104",
+    "position": null,
+    "title": "CSS Anchor Positioning",
+    "specUrl": "https://drafts.csswg.org/css-anchor-position-1/",
+    "issueUrl": "https://github.com/mozilla/standards-positions/issues/1104",
+    "topics": ["CSS"]
+  },
+  {
+    "vendor": "webkit",
+    "key": "1",
+    "position": "support",
+    "title": "Gamepad API Trigger-Rumble Extension",
+    "specUrl": "https://w3c.github.io/gamepad/extensions.html",
+    "issueUrl": "https://github.com/WebKit/standards-positions/issues/1",
+    "topics": ["web apis", "device apis"]
+  },
+  {
+    "vendor": "webkit",
+    "key": "77",
+    "position": null,
+    "title": "CSS Anchor Positioning",
+    "specUrl": "https://drafts.csswg.org/css-anchor-position-1/",
+    "issueUrl": "https://github.com/WebKit/standards-positions/issues/77",
+    "topics": ["css"]
+  }
+]
