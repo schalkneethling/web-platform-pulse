@@ -1,0 +1,62 @@
+{
+  "19": {
+    "position": "positive",
+    "venues": ["W3C"],
+    "concerns": [],
+    "topics": [],
+    "title": "Permissions API",
+    "url": "https://w3c.github.io/permissions/",
+    "explainer": null,
+    "web-feature": null,
+    "mdn": "https://developer.mozilla.org/en-US/docs/Web/API/Permissions_API",
+    "caniuse": "https://caniuse.com/permissions-api",
+    "bug": "https://bugzilla.mozilla.org/show_bug.cgi?id=1105827",
+    "webkit": null,
+    "description": "The Permissions Standard defines common infrastructure for other specifications that need to interact with browser permissions."
+  },
+  "20": {
+    "position": "positive",
+    "venues": ["W3C"],
+    "concerns": [],
+    "topics": ["API"],
+    "title": "Trusted Types",
+    "url": "https://w3c.github.io/trusted-types/dist/spec/",
+    "explainer": null,
+    "web-feature": null,
+    "mdn": null,
+    "caniuse": "https://caniuse.com/trusted-types",
+    "bug": null,
+    "webkit": null,
+    "description": "An API that allows applications to lock down powerful APIs to only accept non-spoofable, typed values in place of strings."
+  },
+  "1104": {
+    "position": null,
+    "venues": ["W3C"],
+    "concerns": [],
+    "topics": ["CSS"],
+    "title": "CSS Anchor Positioning",
+    "url": "https://drafts.csswg.org/css-anchor-position-1/",
+    "explainer": null,
+    "web-feature": "anchor-positioning",
+    "mdn": null,
+    "caniuse": null,
+    "bug": null,
+    "webkit": null,
+    "description": "Anchor positioning ties the position of one element to another."
+  },
+  "1200": {
+    "position": "negative",
+    "venues": ["W3C"],
+    "concerns": ["privacy"],
+    "topics": [],
+    "title": null,
+    "url": null,
+    "explainer": null,
+    "web-feature": null,
+    "mdn": null,
+    "caniuse": null,
+    "bug": null,
+    "webkit": null,
+    "description": null
+  }
+}

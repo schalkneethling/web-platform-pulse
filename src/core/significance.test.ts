@@ -76,6 +76,21 @@ describe("scoreSignificance", () => {
     }
   });
 
+  it("ranks vendor opposition above endorsement above hedged positions", () => {
+    const vendorPosition = (taken: string) =>
+      scoreSignificance(
+        candidate({
+          type: "vendor-position",
+          subject: { kind: "spec", shortname: "x" },
+          after: { position: taken },
+        }),
+      );
+    expect(vendorPosition("oppose")).toBeGreaterThan(vendorPosition("support"));
+    expect(vendorPosition("negative")).toBeGreaterThan(vendorPosition("positive"));
+    expect(vendorPosition("support")).toBeGreaterThan(vendorPosition("neutral"));
+    expect(vendorPosition("defer")).toBe(vendorPosition("blocked"));
+  });
+
   it("ranks runtime releases major above minor above patch", () => {
     const release = (version: string) =>
       scoreSignificance(

@@ -23,6 +23,14 @@ export const scoreSignificance = (event: CandidateEvent): number => {
     }
     case "spec-change":
       return 0.6;
+    case "vendor-position": {
+      // A vendor coming out against a proposal is bigger news than a
+      // routine endorsement; hedges (neutral, defer, blocked) sink.
+      const position = (event.after as { position?: unknown }).position;
+      if (position === "oppose" || position === "negative") return 0.75;
+      if (position === "support" || position === "positive") return 0.65;
+      return 0.45;
+    }
     case "browser-release": {
       // Pre-release churn (canary and nightly ship daily) sinks to the
       // bottom of the group; only stable releases rank by version jump.
