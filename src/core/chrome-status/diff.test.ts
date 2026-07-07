@@ -43,8 +43,8 @@ describe("diffChromeStatus", () => {
         specUrl: "https://drafts.csswg.org/css-anchor-position-1/",
       },
       taxonomy: ["css"],
-      dedupeKey: "chrome-status:feature:5144822362931200:enabled-by-default",
-      correlationKey: "feature-status:chrome:5144822362931200:enabled-by-default",
+      dedupeKey: "chrome-status:feature:5144822362931200:origin-trial-to-enabled-by-default",
+      correlationKey: "feature-status:chrome:5144822362931200:origin-trial-to-enabled-by-default",
     });
     expect(events[0]?.provenance[0]).toMatchObject({
       sourceId: "chrome-status",
@@ -62,6 +62,17 @@ describe("diffChromeStatus", () => {
       before: null,
       taxonomy: ["api"],
     });
+  });
+
+  it("keys by transition, so a revisited status is a fresh event", () => {
+    const firstTrial = diff({ "5144822362931200": "Proposed" }, [
+      feature({ status: "Origin trial" }),
+    ]);
+    const secondTrial = diff({ "5144822362931200": "On hold" }, [
+      feature({ status: "Origin trial" }),
+    ]);
+    expect(firstTrial[0]?.dedupeKey).not.toBe(secondTrial[0]?.dedupeKey);
+    expect(firstTrial[0]?.correlationKey).not.toBe(secondTrial[0]?.correlationKey);
   });
 
   it("stays silent while a feature's status is unchanged", () => {

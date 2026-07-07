@@ -23,6 +23,20 @@ export type ChromeStatusIndex = Record<string, string>;
 
 const SOURCE_ID = "chrome-status";
 
+/**
+ * The chromestatus status texts this differ phrases and scores; the one
+ * source of truth so titles and significance cannot drift apart.
+ */
+export const CHROME_STATUS = {
+  shipped: "Enabled by default",
+  originTrial: "Origin trial",
+  devTrial: "In developer trial (Behind a flag)",
+  deprecated: "Deprecated",
+  removed: "Removed",
+  inDevelopment: "In development",
+  proposed: "Proposed",
+} as const;
+
 const inChrome = (milestone: string | null): string =>
   milestone === null ? "Chrome" : `Chrome ${milestone}`;
 
@@ -31,14 +45,13 @@ const inChrome = (milestone: string | null): string =>
  * invents later falls back to a neutral "Chrome status for X: value".
  */
 const STATUS_PHRASES: Record<string, (feature: ChromeFeature) => string> = {
-  "Enabled by default": (f) => `${f.name} shipped in ${inChrome(f.milestone)}`,
-  "Origin trial": (f) => `${f.name} entered origin trial in ${inChrome(f.milestone)}`,
-  "In developer trial (Behind a flag)": (f) =>
-    `${f.name} available behind a flag in ${inChrome(f.milestone)}`,
-  Deprecated: (f) => `${f.name} deprecated in ${inChrome(f.milestone)}`,
-  Removed: (f) => `${f.name} removed from ${inChrome(f.milestone)}`,
-  "In development": (f) => `${f.name} in development for Chrome`,
-  Proposed: (f) => `${f.name} proposed for Chrome`,
+  [CHROME_STATUS.shipped]: (f) => `${f.name} shipped in ${inChrome(f.milestone)}`,
+  [CHROME_STATUS.originTrial]: (f) => `${f.name} entered origin trial in ${inChrome(f.milestone)}`,
+  [CHROME_STATUS.devTrial]: (f) => `${f.name} available behind a flag in ${inChrome(f.milestone)}`,
+  [CHROME_STATUS.deprecated]: (f) => `${f.name} deprecated in ${inChrome(f.milestone)}`,
+  [CHROME_STATUS.removed]: (f) => `${f.name} removed from ${inChrome(f.milestone)}`,
+  [CHROME_STATUS.inDevelopment]: (f) => `${f.name} in development for Chrome`,
+  [CHROME_STATUS.proposed]: (f) => `${f.name} proposed for Chrome`,
 };
 
 const statusTitle = (feature: ChromeFeature): string => {
@@ -75,7 +88,11 @@ const statusCandidate = (
   observedAt: string,
 ): CandidateEvent => {
   const title = statusTitle(feature);
-  const slug = statusSlug(feature.status);
+  // Keyed by transition, not destination: features revisit statuses (a
+  // second origin trial, deprecated then re-enabled), and a
+  // destination-only key would collide with the earlier event's
+  // dedupe_key and swallow the new item at ingest.
+  const transition = `${statusSlug(before ?? "unseen")}-to-${statusSlug(feature.status)}`;
   return {
     type: "feature-status",
     subject: { kind: "feature", id: feature.webFeature ?? `chromestatus/${feature.id}` },
@@ -89,8 +106,8 @@ const statusCandidate = (
     // updated.when is edit time, not transition time; observation is all we have.
     occurredAt: null,
     taxonomy: [themeFromCategory(feature.category)],
-    dedupeKey: `chrome-status:feature:${feature.id}:${slug}`,
-    correlationKey: `feature-status:chrome:${feature.id}:${slug}`,
+    dedupeKey: `chrome-status:feature:${feature.id}:${transition}`,
+    correlationKey: `feature-status:chrome:${feature.id}:${transition}`,
     provenance: [
       {
         sourceId: SOURCE_ID,

@@ -1,3 +1,4 @@
+import { CHROME_STATUS } from "./chrome-status/diff.ts";
 import type { CandidateEvent } from "./types.ts";
 
 /**
@@ -36,10 +37,10 @@ export const scoreSignificance = (event: CandidateEvent): number => {
       // stages (proposed, in development), which sink below stable
       // browser releases.
       const status = (event.after as { status?: unknown }).status;
-      if (status === "Deprecated" || status === "Removed") return 0.7;
-      if (status === "Enabled by default") return 0.6;
-      if (status === "Origin trial") return 0.5;
-      if (status === "In developer trial (Behind a flag)") return 0.35;
+      if (status === CHROME_STATUS.deprecated || status === CHROME_STATUS.removed) return 0.7;
+      if (status === CHROME_STATUS.shipped) return 0.6;
+      if (status === CHROME_STATUS.originTrial) return 0.5;
+      if (status === CHROME_STATUS.devTrial) return 0.35;
       return 0.25;
     }
     case "browser-release": {

@@ -78,9 +78,15 @@ export const fetchChromeFeatures = async (): Promise<ChromeFeature[]> => {
     const payload = await fetchPage(page * PAGE_SIZE);
     const batch = payload.features ?? [];
     features.push(...parseChromeFeatures(payload));
-    const total = typeof payload.total_count === "number" ? payload.total_count : 0;
-    if (batch.length < PAGE_SIZE || (page + 1) * PAGE_SIZE >= total) break;
+    // A short page always ends the dump; total_count only ends it when
+    // present, so an omitted count falls back to page-size probing.
+    if (batch.length < PAGE_SIZE) return features;
+    const total = payload.total_count;
+    if (typeof total === "number" && (page + 1) * PAGE_SIZE >= total) return features;
   }
+  // Truncation is survivable — the cursor only advances for observed
+  // features — but it should not be silent.
+  console.warn(`chrome-status: dump still full after ${MAX_PAGES} pages; results truncated`);
   return features;
 };
 
