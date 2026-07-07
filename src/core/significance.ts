@@ -31,6 +31,17 @@ export const scoreSignificance = (event: CandidateEvent): number => {
       if (position === "support" || position === "positive") return 0.65;
       return 0.45;
     }
+    case "feature-status": {
+      // Breaking changes outrank shipping; trials outrank paperwork
+      // stages (proposed, in development), which sink below stable
+      // browser releases.
+      const status = (event.after as { status?: unknown }).status;
+      if (status === "Deprecated" || status === "Removed") return 0.7;
+      if (status === "Enabled by default") return 0.6;
+      if (status === "Origin trial") return 0.5;
+      if (status === "In developer trial (Behind a flag)") return 0.35;
+      return 0.25;
+    }
     case "browser-release": {
       // Pre-release churn (canary and nightly ship daily) sinks to the
       // bottom of the group; only stable releases rank by version jump.

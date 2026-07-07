@@ -1,0 +1,29 @@
+[
+  {
+    "id": "5144822362931200",
+    "name": "CSS anchor positioning",
+    "status": "Origin trial",
+    "milestone": "123",
+    "webFeature": "anchor-positioning",
+    "specUrl": "https://drafts.csswg.org/css-anchor-position-1/",
+    "category": "CSS"
+  },
+  {
+    "id": "5633461050195968",
+    "name": "Mutation events",
+    "status": "Enabled by default",
+    "milestone": "1",
+    "webFeature": "mutation-events",
+    "specUrl": "https://w3c.github.io/uievents/#legacy-mutationevent-events",
+    "category": "JavaScript"
+  },
+  {
+    "id": "5167864517623808",
+    "name": "Web haptics",
+    "status": "Proposed",
+    "milestone": null,
+    "webFeature": null,
+    "specUrl": null,
+    "category": "Miscellaneous"
+  }
+]
