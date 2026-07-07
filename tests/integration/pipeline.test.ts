@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createBrowserReleasesAdapter } from "../../src/adapters/browser-releases.ts";
+import { createChromeStatusAdapter } from "../../src/adapters/chrome-status.ts";
 import { createRuntimeReleasesAdapter } from "../../src/adapters/runtime-releases.ts";
 import { createStandardsPositionsAdapter } from "../../src/adapters/standards-positions.ts";
 import { createWebFeaturesAdapter } from "../../src/adapters/web-features.ts";
 import { runPipeline } from "../../src/cli/pipeline.ts";
 import type { SourceAdapter } from "../../src/core/adapter.ts";
 import type { BrowserRelease } from "../../src/core/browser-releases/diff.ts";
+import type { ChromeFeature } from "../../src/core/chrome-status/diff.ts";
 import type { RuntimeRelease } from "../../src/core/runtime-releases/diff.ts";
 import type { VendorPosition } from "../../src/core/standards-positions/diff.ts";
 import type { WebFeaturesData } from "../../src/core/web-features/diff.ts";
@@ -37,6 +39,12 @@ const runtimeReleasesAdapter = (fixture: string) =>
   createRuntimeReleasesAdapter({
     fetchReleases: () =>
       Promise.resolve(loadFixture<RuntimeRelease[]>("runtime-releases", fixture)),
+    now: () => NOW,
+  });
+
+const chromeStatusAdapter = (fixture: string) =>
+  createChromeStatusAdapter({
+    fetchFeatures: () => Promise.resolve(loadFixture<ChromeFeature[]>("chrome-status", fixture)),
     now: () => NOW,
   });
 
@@ -96,21 +104,23 @@ describe("runPipeline", () => {
       browserReleasesAdapter(fixture),
       runtimeReleasesAdapter(fixture),
       standardsPositionsAdapter(fixture),
+      chromeStatusAdapter(fixture),
     ];
     await run(adapters("old.json"));
     const second = await run(adapters("new.json"));
-    expect(second.ingest.created).toBe(12);
+    expect(second.ingest.created).toBe(15);
     expect(second.sourceFailures).toEqual([]);
 
     const subscriber = await sql<{ id: string }[]>`select id from subscriber`;
     const digest = await getLatestDigest(sql, subscriber[0]!.id);
-    expect(digest?.items).toHaveLength(12);
+    expect(digest?.items).toHaveLength(15);
 
     const types = new Set(digest?.items.map((i) => i.type));
     expect(types).toContain("baseline-change");
     expect(types).toContain("browser-release");
     expect(types).toContain("runtime-release");
     expect(types).toContain("vendor-position");
+    expect(types).toContain("feature-status");
 
     const themes = digest!.items.map((i) => i.taxonomy[0]);
     expect(themes.indexOf("browser")).toBeGreaterThan(themes.lastIndexOf("css"));

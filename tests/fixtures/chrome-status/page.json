@@ -1,0 +1,59 @@
+{
+  "total_count": 4,
+  "features": [
+    {
+      "id": 5144822362931200,
+      "name": "CSS anchor positioning",
+      "deleted": false,
+      "confidential": false,
+      "category": "CSS",
+      "web_feature": "anchor-positioning",
+      "standards": {
+        "spec": "https://drafts.csswg.org/css-anchor-position-1/",
+        "maturity": { "text": "Working draft or equivalent", "val": 4 }
+      },
+      "browsers": {
+        "chrome": {
+          "status": { "text": "Enabled by default", "val": 5, "milestone_str": "125" }
+        },
+        "ff": { "view": { "text": "Positive", "val": 1 } },
+        "safari": { "view": { "text": "No signal", "val": 5 } }
+      },
+      "updated": { "by": "someone@chromium.org", "when": "2026-06-30 04:02:38.576583" }
+    },
+    {
+      "id": 5167864517623808,
+      "name": "Web haptics",
+      "deleted": false,
+      "confidential": false,
+      "category": "Miscellaneous",
+      "web_feature": null,
+      "standards": {
+        "spec": null,
+        "maturity": { "text": "No public standards discussion", "val": 7 }
+      },
+      "browsers": {
+        "chrome": { "status": { "text": "Proposed", "val": 2, "milestone_str": "Proposed" } }
+      },
+      "updated": { "by": "someone@microsoft.com", "when": "2026-07-07 04:02:38.576583" }
+    },
+    {
+      "id": 5111111111111111,
+      "name": "Deleted experiment",
+      "deleted": true,
+      "confidential": false,
+      "category": "DOM",
+      "browsers": {
+        "chrome": { "status": { "text": "Removed", "val": 7, "milestone_str": "130" } }
+      }
+    },
+    {
+      "id": 5222222222222222,
+      "name": "Statusless stub",
+      "deleted": false,
+      "confidential": false,
+      "category": "DOM",
+      "browsers": { "chrome": {} }
+    }
+  ]
+}

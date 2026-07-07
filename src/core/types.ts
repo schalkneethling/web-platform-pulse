@@ -3,6 +3,7 @@ export type ChangeEventType =
   | "browser-support"
   | "spec-change"
   | "vendor-position"
+  | "feature-status"
   | "browser-release"
   | "runtime-release"
   | "editorial";

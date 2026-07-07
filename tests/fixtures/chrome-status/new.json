@@ -1,0 +1,38 @@
+[
+  {
+    "id": "5144822362931200",
+    "name": "CSS anchor positioning",
+    "status": "Enabled by default",
+    "milestone": "125",
+    "webFeature": "anchor-positioning",
+    "specUrl": "https://drafts.csswg.org/css-anchor-position-1/",
+    "category": "CSS"
+  },
+  {
+    "id": "5633461050195968",
+    "name": "Mutation events",
+    "status": "Deprecated",
+    "milestone": "127",
+    "webFeature": "mutation-events",
+    "specUrl": "https://w3c.github.io/uievents/#legacy-mutationevent-events",
+    "category": "JavaScript"
+  },
+  {
+    "id": "5167864517623808",
+    "name": "Web haptics",
+    "status": "Proposed",
+    "milestone": null,
+    "webFeature": null,
+    "specUrl": null,
+    "category": "Miscellaneous"
+  },
+  {
+    "id": "5766411463082496",
+    "name": "Speculation rules: target_hint field",
+    "status": "Origin trial",
+    "milestone": "126",
+    "webFeature": null,
+    "specUrl": "https://wicg.github.io/nav-speculation/speculation-rules.html",
+    "category": "DOM"
+  }
+]

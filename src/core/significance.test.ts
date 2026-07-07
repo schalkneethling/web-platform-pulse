@@ -91,6 +91,23 @@ describe("scoreSignificance", () => {
     expect(vendorPosition("defer")).toBe(vendorPosition("blocked"));
   });
 
+  it("ranks Chrome breaking changes above shipping above trials above paperwork", () => {
+    const featureStatus = (status: string) =>
+      scoreSignificance(
+        candidate({
+          type: "feature-status",
+          subject: { kind: "feature", id: "x" },
+          after: { status },
+        }),
+      );
+    expect(featureStatus("Deprecated")).toBeGreaterThan(featureStatus("Enabled by default"));
+    expect(featureStatus("Enabled by default")).toBeGreaterThan(featureStatus("Origin trial"));
+    expect(featureStatus("Origin trial")).toBeGreaterThan(
+      featureStatus("In developer trial (Behind a flag)"),
+    );
+    expect(featureStatus("Proposed")).toBe(featureStatus("In development"));
+  });
+
   it("ranks runtime releases major above minor above patch", () => {
     const release = (version: string) =>
       scoreSignificance(

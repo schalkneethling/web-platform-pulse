@@ -4,6 +4,7 @@
 //   vp run pulse -- --releases tests/fixtures/browser-releases/new.json
 //   vp run pulse -- --runtimes tests/fixtures/runtime-releases/new.json
 //   vp run pulse -- --positions tests/fixtures/standards-positions/new.json
+//   vp run pulse -- --chrome tests/fixtures/chrome-status/new.json
 //   vp run pulse -- --smtp smtp://localhost:54330   (or PULSE_SMTP_URL)
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -15,6 +16,7 @@ import {
   createRuntimeReleasesAdapter,
   fetchRuntimeReleases,
 } from "../adapters/runtime-releases.ts";
+import { createChromeStatusAdapter, fetchChromeFeatures } from "../adapters/chrome-status.ts";
 import {
   createStandardsPositionsAdapter,
   fetchVendorPositions,
@@ -22,6 +24,7 @@ import {
 import { createWebFeaturesAdapter, fetchWebFeaturesData } from "../adapters/web-features.ts";
 import type { BrowserRelease } from "../core/browser-releases/diff.ts";
 import type { RuntimeRelease } from "../core/runtime-releases/diff.ts";
+import type { ChromeFeature } from "../core/chrome-status/diff.ts";
 import type { VendorPosition } from "../core/standards-positions/diff.ts";
 import type { WebFeaturesData } from "../core/web-features/diff.ts";
 import { createEmailChannel } from "../delivery/email.ts";
@@ -35,6 +38,7 @@ const { values } = parseArgs({
     releases: { type: "string" },
     runtimes: { type: "string" },
     positions: { type: "string" },
+    chrome: { type: "string" },
     email: { type: "string" },
     smtp: { type: "string" },
   },
@@ -62,11 +66,17 @@ const fetchPositions = positionsPath
   ? () => Promise.resolve(loadJson<VendorPosition[]>(positionsPath))
   : fetchVendorPositions;
 
+const chromePath = values.chrome;
+const fetchChrome = chromePath
+  ? () => Promise.resolve(loadJson<ChromeFeature[]>(chromePath))
+  : fetchChromeFeatures;
+
 const adapters = [
   createWebFeaturesAdapter({ fetchData }),
   createBrowserReleasesAdapter({ fetchReleases }),
   createRuntimeReleasesAdapter({ fetchReleases: fetchRuntimes }),
   createStandardsPositionsAdapter({ fetchPositions }),
+  createChromeStatusAdapter({ fetchFeatures: fetchChrome }),
 ];
 
 const subscriberEmail =

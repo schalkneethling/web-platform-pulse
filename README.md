@@ -14,6 +14,7 @@ email and rendered in a small reader app.
 | Apple developer releases RSS                                    | Safari releases: stable, beta, Technology Preview                                   |
 | nodejs.org dist index, GitHub releases                          | Runtime releases: Node.js (Current and LTS), Deno, Bun                              |
 | Mozilla & WebKit standards-positions                            | Vendor positions on proposals: taken, revised, or first published                   |
+| [Chrome Platform Status](https://chromestatus.com)              | Chrome feature status: shipped, origin trial, behind a flag, deprecated, removed    |
 
 ## How it works
 
