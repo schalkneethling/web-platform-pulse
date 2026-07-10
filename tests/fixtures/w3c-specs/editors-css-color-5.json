@@ -1,0 +1,20 @@
+{
+  "page": 1,
+  "limit": 100,
+  "pages": 1,
+  "total": 3,
+  "_links": {
+    "up": { "href": "https://api.w3.org/specifications/css-color-5/versions/20260618" },
+    "editors": [
+      {
+        "href": "https://api.w3.org/users/doh7w388usggockwwckswow8wo0sgoo",
+        "title": "Chris Lilley"
+      },
+      {
+        "href": "https://api.w3.org/users/j29dw0wixo0so4ww0w8wwg4sk4ck0wg",
+        "title": "Una Kravets"
+      },
+      { "href": "https://api.w3.org/users/sl5b7a7gj4gcowgkksss4gskc00k40g", "title": "Lea Verou" }
+    ]
+  }
+}

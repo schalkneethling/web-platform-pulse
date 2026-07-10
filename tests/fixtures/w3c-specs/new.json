@@ -1,0 +1,20 @@
+[
+  {
+    "shortname": "css-color-5",
+    "title": "CSS Color Module Level 5",
+    "status": "Working Draft",
+    "date": "2025-01-10",
+    "url": "https://www.w3.org/TR/2025/WD-css-color-5-20250110/",
+    "groups": ["Cascading Style Sheets (CSS) Working Group"],
+    "editors": ["Chris Lilley", "Una Kravets", "Lea Verou"]
+  },
+  {
+    "shortname": "css-color-4",
+    "title": "CSS Color Module Level 4",
+    "status": "Candidate Recommendation Snapshot",
+    "date": "2026-06-18",
+    "url": "https://www.w3.org/TR/2026/CRS-css-color-4-20260618/",
+    "groups": ["Cascading Style Sheets (CSS) Working Group"],
+    "editors": ["Chris Lilley", "Tab Atkins Jr.", "Lea Verou"]
+  }
+]

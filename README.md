@@ -6,15 +6,16 @@ email and rendered in a small reader app.
 
 ## What it watches
 
-| Source                                                          | What it observes                                                                    |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| [web-features](https://github.com/web-platform-dx/web-features) | Features reaching Baseline (newly/widely available) and per-browser support changes |
-| Chromium Dash                                                   | Chrome releases: Stable, Beta, Dev, Canary                                          |
-| Mozilla product-details                                         | Firefox releases: stable, Beta, Nightly                                             |
-| Apple developer releases RSS                                    | Safari releases: stable, beta, Technology Preview                                   |
-| nodejs.org dist index, GitHub releases                          | Runtime releases: Node.js (Current and LTS), Deno, Bun                              |
-| Mozilla & WebKit standards-positions                            | Vendor positions on proposals: taken, revised, or first published                   |
-| [Chrome Platform Status](https://chromestatus.com)              | Chrome feature status: shipped, origin trial, behind a flag, deprecated, removed    |
+| Source                                                                 | What it observes                                                                                       |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [web-features](https://github.com/web-platform-dx/web-features)        | Features reaching Baseline (newly/widely available) and per-browser support changes                    |
+| Chromium Dash                                                          | Chrome releases: Stable, Beta, Dev, Canary                                                             |
+| Mozilla product-details                                                | Firefox releases: stable, Beta, Nightly                                                                |
+| Apple developer releases RSS                                           | Safari releases: stable, beta, Technology Preview                                                      |
+| nodejs.org dist index, GitHub releases                                 | Runtime releases: Node.js (Current and LTS), Deno, Bun                                                 |
+| Mozilla & WebKit standards-positions                                   | Vendor positions on proposals: taken, revised, or first published                                      |
+| [Chrome Platform Status](https://chromestatus.com)                     | Chrome feature status: shipped, origin trial, behind a flag, deprecated, removed                       |
+| [w3c/browser-specs](https://github.com/w3c/browser-specs) + api.w3.org | W3C spec lifecycle transitions (FPWD, CR, Recommendation, …) with editor and working-group attribution |
 
 ## How it works
 

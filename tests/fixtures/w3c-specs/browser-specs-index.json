@@ -1,0 +1,71 @@
+[
+  {
+    "url": "https://drafts.csswg.org/css-color-5/",
+    "shortname": "css-color-5",
+    "series": { "shortname": "css-color", "currentSpecification": "css-color-4" },
+    "organization": "W3C",
+    "groups": [
+      {
+        "name": "Cascading Style Sheets (CSS) Working Group",
+        "url": "https://www.w3.org/groups/wg/css/"
+      }
+    ],
+    "release": { "url": "https://www.w3.org/TR/css-color-5/", "status": "Working Draft" },
+    "nightly": { "url": "https://drafts.csswg.org/css-color-5/", "status": "Editor's Draft" },
+    "title": "CSS Color Module Level 5",
+    "shortTitle": "CSS Color 5"
+  },
+  {
+    "url": "https://drafts.csswg.org/css-color-4/",
+    "shortname": "css-color-4",
+    "series": { "shortname": "css-color", "currentSpecification": "css-color-4" },
+    "organization": "W3C",
+    "groups": [
+      {
+        "name": "Cascading Style Sheets (CSS) Working Group",
+        "url": "https://www.w3.org/groups/wg/css/"
+      }
+    ],
+    "release": {
+      "url": "https://www.w3.org/TR/css-color-4/",
+      "status": "Candidate Recommendation Draft"
+    },
+    "nightly": { "url": "https://drafts.csswg.org/css-color-4/", "status": "Editor's Draft" },
+    "title": "CSS Color Module Level 4",
+    "shortTitle": "CSS Color 4"
+  },
+  {
+    "url": "https://drafts.csswg.org/css-color-6/",
+    "shortname": "css-color-6",
+    "series": { "shortname": "css-color", "currentSpecification": "css-color-4" },
+    "organization": "W3C",
+    "groups": [
+      {
+        "name": "Cascading Style Sheets (CSS) Working Group",
+        "url": "https://www.w3.org/groups/wg/css/"
+      }
+    ],
+    "nightly": { "url": "https://drafts.csswg.org/css-color-6/", "status": "Editor's Draft" },
+    "title": "CSS Color Module Level 6",
+    "shortTitle": "CSS Color 6"
+  },
+  {
+    "url": "https://aomediacodec.github.io/afgs1-spec/",
+    "shortname": "afgs1-spec",
+    "series": { "shortname": "afgs1-spec", "currentSpecification": "afgs1-spec" },
+    "organization": "Alliance for Open Media",
+    "groups": [
+      { "name": "Codec Working Group", "url": "https://aomedia.org/about/#codec-working-group" }
+    ],
+    "release": {
+      "url": "https://aomediacodec.github.io/afgs1-spec/",
+      "status": "Draft Deliverable"
+    },
+    "nightly": {
+      "url": "https://aomediacodec.github.io/afgs1-spec/",
+      "status": "Draft Deliverable"
+    },
+    "title": "AOMedia Film Grain Synthesis 1 (AFGS1) specification",
+    "shortTitle": "AFGS1"
+  }
+]
