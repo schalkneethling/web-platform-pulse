@@ -47,8 +47,10 @@ describe("diffW3CSpecs", () => {
       },
       occurredAt: "2026-06-18",
       taxonomy: ["css"],
-      dedupeKey: "w3c-specs:spec:css-color-5:first-public-working-draft-to-working-draft",
-      correlationKey: "spec-change:css-color-5:first-public-working-draft-to-working-draft",
+      dedupeKey:
+        "w3c-specs:spec:css-color-5:first-public-working-draft-to-working-draft:2026-06-18",
+      correlationKey:
+        "spec-change:css-color-5:first-public-working-draft-to-working-draft:2026-06-18",
     });
     expect(events[0]?.provenance[0]).toMatchObject({
       sourceId: "w3c-specs",
@@ -82,6 +84,30 @@ describe("diffW3CSpecs", () => {
     ]);
     expect(firstCr[0]?.dedupeKey).not.toBe(secondCr[0]?.dedupeKey);
     expect(firstCr[0]?.correlationKey).not.toBe(secondCr[0]?.correlationKey);
+  });
+
+  it("gives two occurrences of the same transition distinct keys via the version date", () => {
+    // WD -> CR, reverted back to WD by a later fetch, then WD -> CR again:
+    // both events share the exact same before/after status pair, so only
+    // the version (date) tells them apart.
+    const firstWdToCr = diff({ "css-color-4": "Working Draft" }, [
+      spec({
+        shortname: "css-color-4",
+        status: "Candidate Recommendation Draft",
+        date: "2026-01-10",
+        url: "https://www.w3.org/TR/2026/CR-css-color-4-20260110/",
+      }),
+    ]);
+    const secondWdToCr = diff({ "css-color-4": "Working Draft" }, [
+      spec({
+        shortname: "css-color-4",
+        status: "Candidate Recommendation Draft",
+        date: "2026-06-20",
+        url: "https://www.w3.org/TR/2026/CR-css-color-4-20260620/",
+      }),
+    ]);
+    expect(firstWdToCr[0]?.dedupeKey).not.toBe(secondWdToCr[0]?.dedupeKey);
+    expect(firstWdToCr[0]?.correlationKey).not.toBe(secondWdToCr[0]?.correlationKey);
   });
 
   it("derives theme from working-group names, falling back to api", () => {

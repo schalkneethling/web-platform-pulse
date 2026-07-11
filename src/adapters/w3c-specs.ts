@@ -17,6 +17,9 @@ export const W3C_API_BASE = "https://api.w3.org";
  * once would hammer api.w3.org. */
 const CONCURRENCY = 10;
 
+/** A hung request must not stall the ~600-spec run indefinitely. */
+const FETCH_TIMEOUT_MS = 10_000;
+
 interface BrowserSpecsGroup {
   name?: unknown;
 }
@@ -55,7 +58,10 @@ export const parseW3CRecTrackSpecs = (payload: BrowserSpecsEntry[]): W3CRecTrack
 };
 
 const fetchJson = async <T>(url: string): Promise<T> => {
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const response = await fetch(url, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`${url} fetch failed: ${response.status} ${response.statusText}`);
   }
@@ -100,7 +106,10 @@ const namesOf = (entities: W3CLinkedEntity[] | undefined): string[] =>
  */
 export const fetchW3CSpec = async (spec: W3CRecTrackSpec): Promise<W3CSpec | null> => {
   const versionUrl = `${W3C_API_BASE}/specifications/${spec.shortname}/versions/latest`;
-  const response = await fetch(versionUrl, { headers: { Accept: "application/json" } });
+  const response = await fetch(versionUrl, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
   if (response.status === 404) return null;
   if (!response.ok) {
     throw new Error(`${versionUrl} fetch failed: ${response.status} ${response.statusText}`);

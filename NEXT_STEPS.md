@@ -1,10 +1,11 @@
 # Next Steps
 
 The prototype is proven: the pipeline runs daily in GitHub Actions against
-Supabase and Resend, and the digest arrives by email. Six sources feed it —
+Supabase and Resend, and the digest arrives by email. Seven sources feed it —
 web-features Baseline transitions, browser releases (Chrome, Firefox, Safari,
 all channels), runtime releases (Node.js, Deno, Bun), Mozilla and WebKit
-standards positions, and Chrome Platform Status feature transitions.
+standards positions, Chrome Platform Status feature transitions, and W3C spec
+lifecycle transitions.
 
 Earlier slices now shipped: subscription filtering (taxonomies +
 significance floor), cadence-window batching, the browser-release and

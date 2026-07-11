@@ -104,7 +104,12 @@ const specCandidate = (
   // Keyed by transition, not destination: a spec can revisit a stage (a
   // second CR after wide review finds issues), and a destination-only key
   // would collide with the earlier event's dedupe_key and swallow this one.
+  // The version identifier (date, falling back to the version URL) further
+  // disambiguates two occurrences of the *same* transition — e.g. WD -> CR,
+  // reverted, then WD -> CR again — which would otherwise share one key and
+  // silently merge into a single event.
   const transition = `${statusSlug(before ?? "unseen")}-to-${statusSlug(spec.status)}`;
+  const version = spec.date ?? spec.url;
   return {
     type: "spec-change",
     subject: { kind: "spec", shortname: spec.shortname },
@@ -120,8 +125,8 @@ const specCandidate = (
     // transition date, unlike sources with no dated window to replay.
     occurredAt: spec.date,
     taxonomy: [themeFromGroups(spec.groups)],
-    dedupeKey: `w3c-specs:spec:${spec.shortname}:${transition}`,
-    correlationKey: `spec-change:${spec.shortname}:${transition}`,
+    dedupeKey: `w3c-specs:spec:${spec.shortname}:${transition}:${version}`,
+    correlationKey: `spec-change:${spec.shortname}:${transition}:${version}`,
     provenance: [{ sourceId: SOURCE_ID, url: spec.url, title, observedAt }],
   };
 };

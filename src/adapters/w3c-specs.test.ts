@@ -2,8 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 import type { W3CSpec } from "../core/w3c-specs/diff.ts";
 import {
+  BROWSER_SPECS_INDEX_URL,
   createW3CSpecsAdapter,
   fetchW3CSpec,
+  fetchW3CSpecs,
   parseW3CRecTrackSpecs,
   type W3CRecTrackSpec,
 } from "./w3c-specs.ts";
@@ -92,6 +94,53 @@ describe("fetchW3CSpec", () => {
       expect(spec).toBeNull();
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+describe("fetchW3CSpecs", () => {
+  it("skips a spec whose request fails and still returns the others", async () => {
+    const responses: Record<string, unknown> = {
+      [BROWSER_SPECS_INDEX_URL]: JSON.parse(fixture("browser-specs-index.json")),
+      "https://api.w3.org/specifications/css-color-5/versions/latest": JSON.parse(
+        fixture("version-css-color-5.json"),
+      ),
+      "https://api.w3.org/specifications/css-color-5/versions/20260618/editors": JSON.parse(
+        fixture("editors-css-color-5.json"),
+      ),
+      "https://api.w3.org/specifications/css-color-5/versions/20260618/deliverers": JSON.parse(
+        fixture("deliverers-css-color-5.json"),
+      ),
+    };
+    const urlOf = (input: RequestInfo | URL): string =>
+      input instanceof URL ? input.href : typeof input === "string" ? input : input.url;
+    const originalFetch = globalThis.fetch;
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = ((...args: unknown[]) => {
+      warnings.push(args.join(" "));
+    }) as typeof console.warn;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      // css-color-4 (the allowlist's other rec-track entry) fails while
+      // css-color-5 succeeds, so this exercises the per-spec try/catch in
+      // fetchW3CSpecs rather than the version-shape parsing already covered
+      // by the fetchW3CSpec tests above.
+      if (url === "https://api.w3.org/specifications/css-color-4/versions/latest") {
+        return new Response("server error", { status: 500 });
+      }
+      const body = responses[url];
+      if (body === undefined) throw new Error(`unexpected fetch: ${url}`);
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const specs = await fetchW3CSpecs();
+      expect(specs.map((s) => s.shortname)).toEqual(["css-color-5"]);
+      expect(warnings.some((w) => w.includes("css-color-4"))).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      console.warn = originalWarn;
     }
   });
 });

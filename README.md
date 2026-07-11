@@ -64,6 +64,10 @@ Useful flags and environment variables:
 | ------------------------------------ | ----------------------------------------------------------- |
 | `--data <path>`                      | Web-features fixture instead of the live artifact           |
 | `--releases <path>`                  | Browser-release fixture instead of the live feeds           |
+| `--runtimes <path>`                  | Runtime-release fixture instead of the live feeds           |
+| `--positions <path>`                 | Standards-positions fixture instead of the live feeds       |
+| `--chrome <path>`                    | Chrome Platform Status fixture instead of the live feed     |
+| `--specs <path>`                     | W3C spec-transition fixture instead of the live feeds       |
 | `--email` / `PULSE_SUBSCRIBER_EMAIL` | The subscriber address                                      |
 | `--smtp` / `PULSE_SMTP_URL`          | SMTP transport; omit it and email is skipped                |
 | `PULSE_EMAIL_FROM`                   | Sender address                                              |
