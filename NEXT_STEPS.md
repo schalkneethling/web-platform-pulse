@@ -1,40 +1,20 @@
 # Next Steps
 
 The prototype is proven: the pipeline runs daily in GitHub Actions against
-Supabase and Resend, and the digest arrives by email. Six sources feed it —
+Supabase and Resend, and the digest arrives by email. Seven sources feed it —
 web-features Baseline transitions, browser releases (Chrome, Firefox, Safari,
 all channels), runtime releases (Node.js, Deno, Bun), Mozilla and WebKit
-standards positions, and Chrome Platform Status feature transitions.
+standards positions, Chrome Platform Status feature transitions, and W3C spec
+lifecycle transitions.
 
 Earlier slices now shipped: subscription filtering (taxonomies +
 significance floor), cadence-window batching, the browser-release and
-runtime-release adapters, and the richer email template.
+runtime-release adapters, the richer email template, and W3C spec-transition
+tracking with editor/working-group attribution.
 
 The slices below are roughly in priority order.
 
 ---
-
-## Slice A — W3C TR transitions + the people behind specs
-
-**Goal:** spec lifecycle events ("CSS Color 5 advanced to Candidate
-Recommendation") with editor and working-group attribution.
-
-The W3C API (api.w3.org, no key required) exposes per-spec latest-version
-`status` and `date`, and the same version resource links to `editors` and
-`deliverers` (working groups). There is no bulk artifact, so use
-[w3c/browser-specs](https://github.com/w3c/browser-specs) (798 specs; raw
-`index.json` carries working-group names, organization, series) as the
-allowlist — roughly 600 W3C-affiliated specs, one version request each on a
-daily cron.
-
-1. Adapter fetches browser-specs, filters to W3C rec-track entries, then
-   fetches each spec's latest version from api.w3.org; cursor is
-   shortname → `status`.
-2. Emit `spec-transition` events on status change, dated from the API's
-   `date` field (cold start can use the real date window).
-3. Enrich the event payload with editors and working group from the version
-   resource — the digest line becomes "CSS Color 5 advanced to CR (CSS
-   Working Group; edited by …)".
 
 ## Slice B — W3C TAG design reviews
 
