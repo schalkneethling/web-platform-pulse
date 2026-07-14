@@ -5,6 +5,7 @@ import {
   type TagReview,
   type TagReviewIndex,
 } from "../core/tag-reviews/diff.ts";
+import { fetchWithTimeout } from "./http.ts";
 
 export const TAG_REVIEWS_SOURCE_ID = "tag-reviews";
 
@@ -14,9 +15,6 @@ export const TAG_REVIEWS_ISSUES_URL = "https://api.github.com/repos/w3ctag/desig
 const PAGE_SIZE = 100;
 /** ~13 pages for a full fetch today (§ NEXT_STEPS); the cap bounds a runaway loop. */
 const MAX_PAGES = 40;
-
-/** A hung request must not stall the paginated dump indefinitely. */
-const FETCH_TIMEOUT_MS = 10_000;
 
 /** The Resolution: <verdict> label is the TAG's own vocabulary for a review's outcome. */
 const RESOLUTION_LABEL_PREFIX = "Resolution: ";
@@ -88,10 +86,7 @@ const nextPageUrl = (linkHeader: string | null): string | null => {
 };
 
 const fetchPage = async (url: string): Promise<{ issues: GithubIssue[]; next: string | null }> => {
-  const response = await fetch(url, {
-    headers: githubHeaders(),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const response = await fetchWithTimeout(url, { headers: githubHeaders() });
   if (!response.ok) {
     throw new Error(`${url} fetch failed: ${response.status} ${response.statusText}`);
   }

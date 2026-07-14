@@ -6,6 +6,7 @@ import {
   type VoicePost,
   type VoicesIndex,
 } from "../core/voices/diff.ts";
+import { fetchWithTimeout } from "./http.ts";
 
 export const VOICES_SOURCE_ID = "voices";
 
@@ -22,9 +23,6 @@ export const VOICES_FEEDS: { source: string; url: string }[] = [
   { source: "w3c", url: "https://www.w3.org/blog/feed/" },
   { source: "whatwg", url: "https://blog.whatwg.org/feed" },
 ];
-
-/** A hung feed request must not stall the whole run. */
-const FETCH_TIMEOUT_MS = 10_000;
 
 interface RssItem {
   title?: unknown;
@@ -115,7 +113,7 @@ export const parseVoicesFeed = (xml: string, source: string): VoicePost[] =>
   isAtomFeed(xml) ? parseAtomFeed(xml, source) : parseRssFeed(xml, source);
 
 const fetchText = async (url: string): Promise<string> => {
-  const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
     throw new Error(`${url} fetch failed: ${response.status} ${response.statusText}`);
   }
