@@ -70,6 +70,11 @@ export const scoreSignificance = (event: CandidateEvent): number => {
       return before === after ? 0.4 : 0.7;
     }
     case "editorial":
-      return 0.5;
+      // Voices posts are commentary, not platform change (§ Slice C): a
+      // modest, fixed score that clears the noisiest pre-release channel
+      // churn (canary/nightly/dev, 0.2) so the section actually surfaces
+      // in a digest otherwise dominated by nightly browser releases, but
+      // stays well below any real spec, feature, or stable-release event.
+      return 0.35;
   }
 };

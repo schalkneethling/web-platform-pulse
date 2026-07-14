@@ -1,0 +1,26 @@
+[
+  {
+    "source": "webkit",
+    "title": "Anchor positioning in WebKit",
+    "url": "https://webkit.org/blog/17280/anchor-positioning-in-webkit/",
+    "publishedAt": "2026-06-30"
+  },
+  {
+    "source": "webkit",
+    "title": "Release Notes for Safari Technology Preview 231",
+    "url": "https://webkit.org/blog/17301/release-notes-for-safari-technology-preview-231/",
+    "publishedAt": "2026-07-10"
+  },
+  {
+    "source": "igalia",
+    "title": "CSS highlight inheritance lands in Chromium",
+    "url": "https://www.igalia.com/2026/06/22/highlight-inheritance.html",
+    "publishedAt": "2026-06-22"
+  },
+  {
+    "source": "igalia",
+    "title": "Servo in 2026: mid-year update",
+    "url": "https://www.igalia.com/2026/07/09/servo-mid-year.html",
+    "publishedAt": "2026-07-09"
+  }
+]

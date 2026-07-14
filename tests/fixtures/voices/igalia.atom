@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Igalia</title>
+  <entry>
+    <title>Servo in 2026: mid-year update</title>
+    <link rel="alternate" type="text/html" href="https://www.igalia.com/2026/07/09/servo-mid-year.html" />
+    <link rel="self" href="https://www.igalia.com/feed.xml" />
+    <id>https://www.igalia.com/2026/07/09/servo-mid-year.html</id>
+    <published>2026-07-09T09:00:00Z</published>
+    <updated>2026-07-09T09:00:00Z</updated>
+  </entry>
+  <entry>
+    <title>CSS highlight inheritance lands in Chromium</title>
+    <link href="https://www.igalia.com/2026/06/22/highlight-inheritance.html" />
+    <id>https://www.igalia.com/2026/06/22/highlight-inheritance.html</id>
+    <updated>2026-06-22T11:00:00Z</updated>
+  </entry>
+</feed>
