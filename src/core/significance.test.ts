@@ -108,6 +108,19 @@ describe("scoreSignificance", () => {
     expect(featureStatus("Proposed")).toBe(featureStatus("In development"));
   });
 
+  it("ranks a contested TAG verdict above a routine one above an opened review", () => {
+    const tagReview = (state: string, verdict: string | null) =>
+      scoreSignificance(
+        candidate({
+          type: "tag-review",
+          subject: { kind: "tag-review", number: 1244 },
+          after: { state, verdict },
+        }),
+      );
+    expect(tagReview("closed", "unsatisfied")).toBeGreaterThan(tagReview("closed", "satisfied"));
+    expect(tagReview("closed", "satisfied")).toBeGreaterThan(tagReview("open", null));
+  });
+
   it("ranks runtime releases major above minor above patch", () => {
     const release = (version: string) =>
       scoreSignificance(
@@ -129,6 +142,11 @@ describe("scoreSignificance", () => {
       candidate({
         type: "runtime-release",
         subject: { kind: "runtime", name: "bun", version: "nightly" },
+      }),
+      candidate({
+        type: "tag-review",
+        subject: { kind: "tag-review", number: 1 },
+        after: { state: "closed", verdict: "unsatisfied" },
       }),
     ]) {
       const score = scoreSignificance(event);

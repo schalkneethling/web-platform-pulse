@@ -24,6 +24,17 @@ export const scoreSignificance = (event: CandidateEvent): number => {
     }
     case "spec-change":
       return 0.6;
+    case "tag-review": {
+      // Low-volume and high-signal by nature (§ Slice B): a review opening
+      // is worth surfacing, but a review the TAG has actually judged
+      // outranks it — and a contested verdict outranks a routine one.
+      const after = event.after as { state?: unknown; verdict?: unknown };
+      if (after.state !== "closed") return 0.55;
+      const verdict = typeof after.verdict === "string" ? after.verdict : null;
+      if (verdict === "unsatisfied" || verdict === "object" || verdict === "decline") return 0.8;
+      if (verdict === "satisfied" || verdict === "satisfied with concerns") return 0.65;
+      return 0.6;
+    }
     case "vendor-position": {
       // A vendor coming out against a proposal is bigger news than a
       // routine endorsement; hedges (neutral, defer, blocked) sink.
