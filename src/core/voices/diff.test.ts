@@ -27,6 +27,19 @@ describe("diffVoices", () => {
     expect(events[0]!.before).toBeNull();
   });
 
+  it("a feed added after seeding gets its own cold-start window", () => {
+    const prev = { webkit: ["https://webkit.org/blog/old-post/"] };
+    const events = diffVoices(
+      prev,
+      [
+        post({ source: "igalia", url: "https://igalia.com/fresh", publishedAt: "2026-07-09" }),
+        post({ source: "igalia", url: "https://igalia.com/archive", publishedAt: "2024-01-15" }),
+      ],
+      OPTIONS,
+    );
+    expect(events.map((e) => e.dedupeKey)).toEqual(["voices:post:igalia:https://igalia.com/fresh"]);
+  });
+
   it("emits a post the cursor has not seen for this source", () => {
     const prev = { webkit: ["https://webkit.org/blog/old-post/"] };
     const events = diffVoices(prev, [post({})], OPTIONS);

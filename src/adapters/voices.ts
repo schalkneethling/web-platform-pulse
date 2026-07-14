@@ -49,6 +49,17 @@ interface AtomEntry {
 const toArray = <T>(value: T | T[] | undefined): T[] =>
   value === undefined ? [] : Array.isArray(value) ? value : [value];
 
+/** An Atom title with attributes (`<title type="html">`) parses as
+ * `{ "#text": … }` under ignoreAttributes: false; a bare title as a string. */
+const textOf = (value: unknown): string | null => {
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null && "#text" in value) {
+    const text = (value as { "#text": unknown })["#text"];
+    if (typeof text === "string") return text;
+  }
+  return null;
+};
+
 const toIsoDate = (value: string | undefined): string | null => {
   if (value === undefined) return null;
   const time = Date.parse(value);
@@ -80,7 +91,8 @@ const parseAtomFeed = (xml: string, source: string): VoicePost[] => {
   };
   const posts: VoicePost[] = [];
   for (const entry of toArray(feed.feed?.entry)) {
-    if (typeof entry.title !== "string") continue;
+    const title = textOf(entry.title);
+    if (title === null) continue;
     const links = toArray(entry.link);
     const alternate = links.find((link) => link["@_rel"] === "alternate") ?? links[0];
     const href = alternate?.["@_href"];
@@ -88,7 +100,7 @@ const parseAtomFeed = (xml: string, source: string): VoicePost[] => {
     const published = typeof entry.published === "string" ? entry.published : entry.updated;
     posts.push({
       source,
-      title: entry.title.trim(),
+      title: title.trim(),
       url: href.trim(),
       publishedAt: toIsoDate(typeof published === "string" ? published : undefined),
     });

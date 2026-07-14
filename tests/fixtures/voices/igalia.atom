@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>Igalia</title>
   <entry>
-    <title>Servo in 2026: mid-year update</title>
+    <title type="html">Servo in 2026: mid-year update</title>
     <link rel="alternate" type="text/html" href="https://www.igalia.com/2026/07/09/servo-mid-year.html" />
     <link rel="self" href="https://www.igalia.com/feed.xml" />
     <id>https://www.igalia.com/2026/07/09/servo-mid-year.html</id>

@@ -68,10 +68,11 @@ const postCandidate = (post: VoicePost, observedAt: string): CandidateEvent => {
 };
 
 /**
- * Cold start (§5.3): with no prior cursor every post already in the feed
- * would otherwise flood the first digest, so — same spirit as
- * browser-releases — only posts dated within the cold-start window before
- * now are emitted; the rest are seeded into the cursor silently.
+ * Cold start (§5.3): a source with no cursor yet — whether the whole
+ * pipeline is new or the feed was added later — would otherwise flood the
+ * digest with its archive, so — same spirit as browser-releases — only
+ * posts dated within the cold-start window before now are emitted; the
+ * rest are seeded into the cursor silently.
  */
 export const diffVoices = (
   prev: VoicesIndex | null,
@@ -80,9 +81,9 @@ export const diffVoices = (
 ): CandidateEvent[] => {
   const events: CandidateEvent[] = [];
   for (const post of posts) {
-    const seen = prev?.[post.source] ?? [];
-    if (seen.includes(postKey(post))) continue;
-    if (prev === null && !withinColdStartWindow(post.publishedAt, options.now)) continue;
+    const seen = prev?.[post.source];
+    if (seen !== undefined && seen.includes(postKey(post))) continue;
+    if (seen === undefined && !withinColdStartWindow(post.publishedAt, options.now)) continue;
     events.push(postCandidate(post, options.observedAt));
   }
   return events;
