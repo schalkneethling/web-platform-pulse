@@ -9,8 +9,9 @@ export interface DigestView {
   items: ChangeEvent[];
 }
 
-/** Theme order for presentation: platform work first, browsers and runtimes last. */
-const THEME_ORDER = ["css", "html", "javascript", "api", "browser", "runtime"];
+/** Theme order for presentation: platform work first, browsers and runtimes
+ * after, commentary (Voices) closing the digest. */
+const THEME_ORDER = ["css", "html", "javascript", "api", "browser", "runtime", "voices"];
 
 /** Presentation labels shared by every renderer of a digest. */
 export const THEME_LABELS: Record<string, string> = {
@@ -20,6 +21,7 @@ export const THEME_LABELS: Record<string, string> = {
   api: "Web APIs",
   browser: "Browser Releases",
   runtime: "Runtimes",
+  voices: "Voices",
 };
 
 export const themeOf = (event: ChangeEvent): string => event.taxonomy[0] ?? "api";

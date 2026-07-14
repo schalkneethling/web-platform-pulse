@@ -14,7 +14,8 @@ export type Subject =
   | { kind: "spec"; shortname: string }
   | { kind: "browser"; name: "chrome" | "firefox" | "safari"; version: string }
   | { kind: "runtime"; name: "node" | "deno" | "bun"; version: string }
-  | { kind: "tag-review"; number: number };
+  | { kind: "tag-review"; number: number }
+  | { kind: "post"; source: string; url: string };
 
 export interface Provenance {
   sourceId: string;
