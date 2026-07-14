@@ -5,6 +5,7 @@ import {
   type FeatureIndex,
   type WebFeaturesData,
 } from "../core/web-features/diff.ts";
+import { fetchWithTimeout } from "./http.ts";
 
 export const WEB_FEATURES_SOURCE_ID = "web-features";
 
@@ -17,7 +18,7 @@ export interface WebFeaturesAdapterOptions {
 }
 
 export const fetchWebFeaturesData = async (): Promise<WebFeaturesData> => {
-  const response = await fetch(WEB_FEATURES_DATA_URL);
+  const response = await fetchWithTimeout(WEB_FEATURES_DATA_URL);
   if (!response.ok) {
     throw new Error(`web-features fetch failed: ${response.status} ${response.statusText}`);
   }

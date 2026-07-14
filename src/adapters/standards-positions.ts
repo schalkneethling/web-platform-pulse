@@ -5,6 +5,7 @@ import {
   type PositionIndex,
   type VendorPosition,
 } from "../core/standards-positions/diff.ts";
+import { fetchJson } from "./http.ts";
 
 export const STANDARDS_POSITIONS_SOURCE_ID = "standards-positions";
 
@@ -67,14 +68,6 @@ export const parseWebKitPositions = (payload: WebKitEntry[]): VendorPosition[] =
     });
   }
   return positions;
-};
-
-const fetchJson = async <T>(url: string): Promise<T> => {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`${url} fetch failed: ${response.status} ${response.statusText}`);
-  }
-  return (await response.json()) as T;
 };
 
 export const fetchVendorPositions = async (): Promise<VendorPosition[]> => {

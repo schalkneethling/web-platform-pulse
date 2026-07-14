@@ -5,6 +5,7 @@ import {
   type RuntimeIndex,
   type RuntimeRelease,
 } from "../core/runtime-releases/diff.ts";
+import { fetchJson } from "./http.ts";
 
 export const RUNTIME_RELEASES_SOURCE_ID = "runtime-releases";
 
@@ -72,21 +73,13 @@ const githubHeaders = (): Record<string, string> => {
   return token ? { authorization: `Bearer ${token}` } : {};
 };
 
-const fetchJson = async <T>(url: string, headers: Record<string, string> = {}): Promise<T> => {
-  const response = await fetch(url, { headers });
-  if (!response.ok) {
-    throw new Error(`${url} fetch failed: ${response.status} ${response.statusText}`);
-  }
-  return (await response.json()) as T;
-};
-
 export const fetchRuntimeReleases = async (): Promise<RuntimeRelease[]> => {
   const [node, deno, bun] = await Promise.all([
     fetchJson<NodeIndexEntry[]>(NODE_INDEX_URL).then(parseNodeIndex),
-    fetchJson<GithubRelease>(DENO_LATEST_RELEASE_URL, githubHeaders()).then((payload) =>
-      parseGithubRelease(payload, "deno"),
+    fetchJson<GithubRelease>(DENO_LATEST_RELEASE_URL, { headers: githubHeaders() }).then(
+      (payload) => parseGithubRelease(payload, "deno"),
     ),
-    fetchJson<GithubRelease>(BUN_LATEST_RELEASE_URL, githubHeaders()).then((payload) =>
+    fetchJson<GithubRelease>(BUN_LATEST_RELEASE_URL, { headers: githubHeaders() }).then((payload) =>
       parseGithubRelease(payload, "bun"),
     ),
   ]);

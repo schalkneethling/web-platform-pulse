@@ -7,6 +7,7 @@ import {
   type ReleaseChannel,
   type ReleaseIndex,
 } from "../core/browser-releases/diff.ts";
+import { fetchJson, fetchWithTimeout } from "./http.ts";
 
 export const BROWSER_RELEASES_SOURCE_ID = "browser-releases";
 
@@ -134,16 +135,8 @@ export const parseSafariFeed = (xml: string): BrowserRelease[] => {
   return [...found.values()];
 };
 
-const fetchJson = async <T>(url: string): Promise<T> => {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`${url} fetch failed: ${response.status} ${response.statusText}`);
-  }
-  return (await response.json()) as T;
-};
-
 const fetchText = async (url: string): Promise<string> => {
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
     throw new Error(`${url} fetch failed: ${response.status} ${response.statusText}`);
   }

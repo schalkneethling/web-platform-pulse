@@ -5,6 +5,7 @@ import {
   type ChromeFeature,
   type ChromeStatusIndex,
 } from "../core/chrome-status/diff.ts";
+import { fetchWithTimeout } from "./http.ts";
 
 export const CHROME_STATUS_SOURCE_ID = "chrome-status";
 
@@ -65,7 +66,7 @@ const stripXssiPrefix = (body: string): string => {
 
 const fetchPage = async (start: number): Promise<ChromeStatusPage> => {
   const url = `${CHROME_STATUS_FEATURES_URL}?num=${PAGE_SIZE}&start=${start}`;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
     throw new Error(`${url} fetch failed: ${response.status} ${response.statusText}`);
   }
