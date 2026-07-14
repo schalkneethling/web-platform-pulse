@@ -1,8 +1,9 @@
 # Web Platform Pulse
 
 A daily digest of what changed across the web platform — Baseline transitions,
-browser support changes, and browser releases on every channel — delivered by
-email and rendered in a small reader app.
+browser support changes, browser releases on every channel, standards signals,
+and first-party commentary — delivered by email and rendered in a small reader
+app.
 
 ## What it watches
 
@@ -16,6 +17,8 @@ email and rendered in a small reader app.
 | Mozilla & WebKit standards-positions                                   | Vendor positions on proposals: taken, revised, or first published                                      |
 | [Chrome Platform Status](https://chromestatus.com)                     | Chrome feature status: shipped, origin trial, behind a flag, deprecated, removed                       |
 | [w3c/browser-specs](https://github.com/w3c/browser-specs) + api.w3.org | W3C spec lifecycle transitions (FPWD, CR, Recommendation, …) with editor and working-group attribution |
+| [w3ctag/design-reviews](https://github.com/w3ctag/design-reviews)      | TAG design reviews opening and closing, with the `Resolution:` verdict (satisfied, unsatisfied, …)     |
+| WebKit, Igalia, Mozilla Hacks, W3C, and WHATWG blogs                   | First-party commentary, rendered as the digest's own "Voices" section                                  |
 
 ## How it works
 
@@ -68,6 +71,8 @@ Useful flags and environment variables:
 | `--positions <path>`                 | Standards-positions fixture instead of the live feeds       |
 | `--chrome <path>`                    | Chrome Platform Status fixture instead of the live feed     |
 | `--specs <path>`                     | W3C spec-transition fixture instead of the live feeds       |
+| `--tag-reviews <path>`               | TAG design-review fixture instead of the live issues API    |
+| `--voices <path>`                    | Voices fixture instead of the live blog feeds               |
 | `--email` / `PULSE_SUBSCRIBER_EMAIL` | The subscriber address                                      |
 | `--smtp` / `PULSE_SMTP_URL`          | SMTP transport; omit it and email is skipped                |
 | `PULSE_EMAIL_FROM`                   | Sender address                                              |

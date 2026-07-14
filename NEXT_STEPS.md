@@ -1,40 +1,23 @@
 # Next Steps
 
 The prototype is proven: the pipeline runs daily in GitHub Actions against
-Supabase and Resend, and the digest arrives by email. Seven sources feed it —
+Supabase and Resend, and the digest arrives by email. Nine sources feed it —
 web-features Baseline transitions, browser releases (Chrome, Firefox, Safari,
 all channels), runtime releases (Node.js, Deno, Bun), Mozilla and WebKit
-standards positions, Chrome Platform Status feature transitions, and W3C spec
-lifecycle transitions.
+standards positions, Chrome Platform Status feature transitions, W3C spec
+lifecycle transitions, W3C TAG design reviews, and first-party blog voices.
 
 Earlier slices now shipped: subscription filtering (taxonomies +
 significance floor), cadence-window batching, the browser-release and
-runtime-release adapters, the richer email template, and W3C spec-transition
-tracking with editor/working-group attribution.
+runtime-release adapters, the richer email template, W3C spec-transition
+tracking with editor/working-group attribution, TAG design-review tracking
+with `Resolution:` verdicts (Slice B), and the "Voices" digest section
+aggregating the WebKit, Igalia, Mozilla Hacks, W3C, and WHATWG blogs
+(Slice C). Chromium blog and web.dev remain easy Voices additions.
 
 The slices below are roughly in priority order.
 
 ---
-
-## Slice B — W3C TAG design reviews
-
-**Goal:** `tag-review` events when the TAG opens or closes a design review,
-with the verdict ("satisfied", "unsatisfied", …) from issue labels.
-
-GitHub issues API on w3ctag/design-reviews: stable issue numbers, ISO dates,
-~13 pages per full fetch. Emit only on state change or verdict-label change —
-label churn and comments are noise. Pass `GITHUB_TOKEN` in Actions (the
-runtime adapter already does) to lift the 60 req/hr unauthenticated limit.
-
-## Slice C — A "Voices" digest section
-
-**Goal:** first-party commentary alongside the change events.
-
-Verified live feeds: WebKit blog, Igalia, Mozilla Hacks, W3C blog, WHATWG
-blog (also available: Chromium blog, web.dev). This is aggregation, not
-artifact diffing — render recent posts as their own digest section rather
-than force-matching posts to events; feed data alone (title + URL) makes
-matching fuzzy. Revisit matching once spec URLs are in more event payloads.
 
 ## Slice D — Digest volume management
 
