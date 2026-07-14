@@ -6,13 +6,15 @@ export type ChangeEventType =
   | "feature-status"
   | "browser-release"
   | "runtime-release"
+  | "tag-review"
   | "editorial";
 
 export type Subject =
   | { kind: "feature"; id: string }
   | { kind: "spec"; shortname: string }
   | { kind: "browser"; name: "chrome" | "firefox" | "safari"; version: string }
-  | { kind: "runtime"; name: "node" | "deno" | "bun"; version: string };
+  | { kind: "runtime"; name: "node" | "deno" | "bun"; version: string }
+  | { kind: "tag-review"; number: number };
 
 export interface Provenance {
   sourceId: string;

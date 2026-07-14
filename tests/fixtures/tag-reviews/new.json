@@ -1,0 +1,18 @@
+[
+  {
+    "number": 1244,
+    "title": "Web Application Security Working Group Charter",
+    "state": "open",
+    "verdict": null,
+    "url": "https://github.com/w3ctag/design-reviews/issues/1244",
+    "updatedAt": "2026-06-18"
+  },
+  {
+    "number": 1230,
+    "title": "WebDriver BiDi",
+    "state": "closed",
+    "verdict": "satisfied",
+    "url": "https://github.com/w3ctag/design-reviews/issues/1230",
+    "updatedAt": "2026-06-03"
+  }
+]

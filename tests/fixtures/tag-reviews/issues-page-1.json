@@ -1,0 +1,27 @@
+[
+  {
+    "number": 1244,
+    "title": "[wg/webappsec] Web Application Security Working Group Charter",
+    "state": "open",
+    "html_url": "https://github.com/w3ctag/design-reviews/issues/1244",
+    "updated_at": "2026-06-18T10:00:00Z",
+    "labels": [{ "name": "charter" }]
+  },
+  {
+    "number": 1230,
+    "title": "WebDriver BiDi",
+    "state": "closed",
+    "html_url": "https://github.com/w3ctag/design-reviews/issues/1230",
+    "updated_at": "2026-06-03T02:41:55Z",
+    "labels": [{ "name": "Resolution: satisfied" }, { "name": "Venue: Browser Testing & Tools WG" }]
+  },
+  {
+    "number": 9999,
+    "title": "A stray pull request the issues API also returns",
+    "state": "open",
+    "html_url": "https://github.com/w3ctag/design-reviews/pull/9999",
+    "updated_at": "2026-06-01T00:00:00Z",
+    "pull_request": { "url": "https://api.github.com/repos/w3ctag/design-reviews/pulls/9999" },
+    "labels": []
+  }
+]

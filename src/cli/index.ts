@@ -6,6 +6,7 @@
 //   vp run pulse -- --positions tests/fixtures/standards-positions/new.json
 //   vp run pulse -- --chrome tests/fixtures/chrome-status/new.json
 //   vp run pulse -- --specs tests/fixtures/w3c-specs/new.json
+//   vp run pulse -- --tag-reviews tests/fixtures/tag-reviews/new.json
 //   vp run pulse -- --smtp smtp://localhost:54330   (or PULSE_SMTP_URL)
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -24,12 +25,14 @@ import {
 } from "../adapters/standards-positions.ts";
 import { createWebFeaturesAdapter, fetchWebFeaturesData } from "../adapters/web-features.ts";
 import { createW3CSpecsAdapter, fetchW3CSpecs } from "../adapters/w3c-specs.ts";
+import { createTagReviewsAdapter, fetchTagReviews } from "../adapters/tag-reviews.ts";
 import type { BrowserRelease } from "../core/browser-releases/diff.ts";
 import type { RuntimeRelease } from "../core/runtime-releases/diff.ts";
 import type { ChromeFeature } from "../core/chrome-status/diff.ts";
 import type { VendorPosition } from "../core/standards-positions/diff.ts";
 import type { WebFeaturesData } from "../core/web-features/diff.ts";
 import type { W3CSpec } from "../core/w3c-specs/diff.ts";
+import type { TagReview } from "../core/tag-reviews/diff.ts";
 import { createEmailChannel } from "../delivery/email.ts";
 import { createSmtpSender } from "../delivery/smtp.ts";
 import { connect } from "../store/db.ts";
@@ -43,6 +46,7 @@ const { values } = parseArgs({
     positions: { type: "string" },
     chrome: { type: "string" },
     specs: { type: "string" },
+    "tag-reviews": { type: "string" },
     email: { type: "string" },
     smtp: { type: "string" },
   },
@@ -80,6 +84,11 @@ const fetchSpecs = specsPath
   ? () => Promise.resolve(loadJson<W3CSpec[]>(specsPath))
   : fetchW3CSpecs;
 
+const tagReviewsPath = values["tag-reviews"];
+const fetchReviews = tagReviewsPath
+  ? () => Promise.resolve(loadJson<TagReview[]>(tagReviewsPath))
+  : fetchTagReviews;
+
 const adapters = [
   createWebFeaturesAdapter({ fetchData }),
   createBrowserReleasesAdapter({ fetchReleases }),
@@ -87,6 +96,7 @@ const adapters = [
   createStandardsPositionsAdapter({ fetchPositions }),
   createChromeStatusAdapter({ fetchFeatures: fetchChrome }),
   createW3CSpecsAdapter({ fetchSpecs }),
+  createTagReviewsAdapter({ fetchReviews }),
 ];
 
 const subscriberEmail =
