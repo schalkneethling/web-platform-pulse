@@ -44,15 +44,19 @@ describe("fetchWithTimeout", () => {
     );
   });
 
-  it("rethrows non-timeout failures untouched", async () => {
+  it("names the URL on non-timeout failures too, keeping the original as cause", async () => {
+    const connectionError = new TypeError("Unable to connect");
     await withFetch(
       async () => {
-        throw new TypeError("Unable to connect");
+        throw connectionError;
       },
       async () => {
-        await expect(fetchWithTimeout("https://example.test/down")).rejects.toThrow(
-          "Unable to connect",
+        const failure = await fetchWithTimeout("https://example.test/down").then(
+          () => null,
+          (error: unknown) => error as Error,
         );
+        expect(failure?.message).toBe("https://example.test/down fetch failed: Unable to connect");
+        expect(failure?.cause).toBe(connectionError);
       },
     );
   });

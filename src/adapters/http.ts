@@ -6,7 +6,7 @@
  */
 export const FETCH_TIMEOUT_MS = 10_000;
 
-/** An abort names the URL, so per-source failure logging stays informative. */
+/** Every failure names the URL, so per-source failure logging stays informative. */
 export const fetchWithTimeout = async (
   url: string,
   init: Omit<RequestInit, "signal"> = {},
@@ -15,9 +15,10 @@ export const fetchWithTimeout = async (
     return await fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      throw new Error(`${url} fetch timed out after ${FETCH_TIMEOUT_MS}ms`);
+      throw new Error(`${url} fetch timed out after ${FETCH_TIMEOUT_MS}ms`, { cause: error });
     }
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${url} fetch failed: ${message}`, { cause: error });
   }
 };
 
