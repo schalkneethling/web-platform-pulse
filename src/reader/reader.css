@@ -121,6 +121,10 @@ body {
   font-size: var(--font-size-s);
 }
 
+.digest-item__prose {
+  margin: 0;
+}
+
 .digest-item__sources {
   margin: var(--space-s) 0 0;
   padding: 0;
