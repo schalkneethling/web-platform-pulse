@@ -28,6 +28,8 @@ jobs:
           cache: true
       - run: vp install
       - run: vp check
+      # Flags unused files, dependencies, and exports (config: knip.json).
+      - run: vp run knip
       # The integration tests self-provision Postgres and Mailpit via Docker
       # (see scripts/dev-db.ts, scripts/dev-mail.ts), which is available on
       # ubuntu-latest, so no database secrets are needed here.

@@ -10,7 +10,8 @@
     "prepare": "vp config",
     "pulse": "bun run src/cli/index.ts",
     "db:up": "bun run scripts/db-up.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "knip": "knip"
   },
   "dependencies": {
     "fast-xml-parser": "^5.10.0",
@@ -30,6 +31,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "babel-plugin-react-compiler": "^1.0.0",
+    "knip": "^6.27.0",
     "typescript": "~7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.2",
     "vite-plus": "0.2.4"
