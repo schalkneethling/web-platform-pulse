@@ -16,6 +16,9 @@ dist-ssr
 test-results
 playwright-report
 
+# tokensave MCP local state
+.tokensave
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
