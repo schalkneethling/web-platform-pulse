@@ -93,7 +93,12 @@ export const splitBrowserSupport = (
 
   const bySignature = new Map<string, { pairs: SupportPair[]; features: RollupFeature[] }>();
   for (const { feature, pairs } of byFeature.values()) {
-    pairs.sort((a, b) => browserRank(a.browser) - browserRank(b.browser));
+    pairs.sort(
+      (a, b) =>
+        browserRank(a.browser) - browserRank(b.browser) ||
+        a.browser.localeCompare(b.browser) ||
+        a.version.localeCompare(b.version),
+    );
     const signature = pairs.map((pair) => `${pair.browser}@${pair.version}`).join("|");
     const group = bySignature.get(signature) ?? { pairs, features: [] };
     group.features.push(feature);
