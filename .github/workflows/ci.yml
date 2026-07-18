@@ -1,0 +1,31 @@
+name: CI
+
+# Format, lint, type-check and test on every PR and on pushes to main. The
+# scheduled Pulse run (pulse.yml) exercises the app, but nothing verified that
+# a change — including a Dependabot dependency bump — still compiles and passes
+# tests before merge. This closes that gap.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch/PR makes in-flight runs redundant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "24"
+          cache: true
+      - run: vp install
+      - run: vp check
+      # The integration tests self-provision Postgres and Mailpit via Docker
+      # (see scripts/dev-db.ts, scripts/dev-mail.ts), which is available on
+      # ubuntu-latest, so no database secrets are needed here.
+      - run: vp test
