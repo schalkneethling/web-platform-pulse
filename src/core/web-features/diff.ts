@@ -38,7 +38,7 @@ export type FeatureIndex = Record<string, IndexedFeature>;
 
 const SOURCE_ID = "web-features";
 
-const BROWSER_LABELS: Record<string, string> = {
+export const BROWSER_LABELS: Record<string, string> = {
   chrome: "Chrome",
   chrome_android: "Chrome on Android",
   edge: "Edge",

@@ -1,5 +1,6 @@
 import type { DeliveryChannel } from "../core/delivery.ts";
 import { groupByTheme, THEME_LABELS, type DigestView } from "../core/digest.ts";
+import { listJoin, splitBrowserSupport, type SupportRollup } from "../core/support-rollup.ts";
 import type { ChangeEvent } from "../core/types.ts";
 
 export interface EmailContent {
@@ -48,6 +49,20 @@ const itemText = (event: ChangeEvent): string =>
     ...event.provenance.map((p) => `  ${p.url}`),
   ].join("\n");
 
+/** One sentence per rollup, feature names linking to webstatus.dev. */
+const rollupHtml = (rollup: SupportRollup): string => {
+  const features = listJoin(
+    rollup.features.map((f) => `<a href="${escapeHtml(f.url)}">${escapeHtml(f.name)}</a>`),
+  );
+  return `  <p>${escapeHtml(rollup.lead)} ${features}.</p>`;
+};
+
+const rollupText = (rollup: SupportRollup): string =>
+  [
+    `- ${rollup.lead} ${listJoin(rollup.features.map((f) => f.name))}.`,
+    ...rollup.features.map((f) => `  ${f.url}`),
+  ].join("\n");
+
 /**
  * The digest as an email: the same DigestView the reader renders, as
  * semantic HTML grouped by theme, with a plain-text alternative.
@@ -62,23 +77,29 @@ export const renderDigestEmail = (digest: DigestView): EmailContent => {
   const html = [
     "<h1>Platform Pulse</h1>",
     `  <p>${count} ${noun} across the web platform, covering ${window}.</p>`,
-    ...groups.flatMap((group) => [
-      `  <h2>${escapeHtml(themeLabel(group.theme))}</h2>`,
-      "  <ul>",
-      ...group.items.map(itemHtml),
-      "  </ul>",
-    ]),
+    ...groups.flatMap((group) => {
+      const { rest, rollups } = splitBrowserSupport(group.items);
+      return [
+        `  <h2>${escapeHtml(themeLabel(group.theme))}</h2>`,
+        ...(rest.length > 0 ? ["  <ul>", ...rest.map(itemHtml), "  </ul>"] : []),
+        ...rollups.map(rollupHtml),
+      ];
+    }),
   ].join("\n");
 
   const text = [
     `Platform Pulse — ${count} ${noun}`,
     `Covering ${window}`,
-    ...groups.flatMap((group) => [
-      "",
-      `# ${themeLabel(group.theme)}`,
-      "",
-      ...group.items.map(itemText),
-    ]),
+    ...groups.flatMap((group) => {
+      const { rest, rollups } = splitBrowserSupport(group.items);
+      return [
+        "",
+        `# ${themeLabel(group.theme)}`,
+        "",
+        ...rest.map(itemText),
+        ...rollups.map(rollupText),
+      ];
+    }),
   ].join("\n");
 
   return { subject, text, html };
