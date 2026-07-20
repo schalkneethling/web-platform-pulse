@@ -14,7 +14,7 @@
     "knip": "knip"
   },
   "dependencies": {
-    "fast-xml-parser": "^5.10.0",
+    "fast-xml-parser": "^5.10.1",
     "nodemailer": "^9",
     "postgres": "^3.4.9",
     "react": "^19.2.7",
