@@ -136,7 +136,26 @@ describe("capThemeGroup", () => {
     expect(hidden.map((u) => u.key)).toEqual(items.slice(THEME_ITEM_CAP).map((e) => e.id));
   });
 
-  it("folds rollups too: they sort last, so they are the first to go", () => {
+  it("never folds a rollup, however many plain events overflow", () => {
+    const rest = Array.from({ length: THEME_ITEM_CAP + 3 }, (_, i) =>
+      event(`css-${i}`, { significance: 1 - i * 0.01 }),
+    );
+    const rollupEvents = [
+      supportEvent("text-fit", "text-fit", "chrome", "150"),
+      supportEvent("text-fit", "text-fit", "edge", "150"),
+    ];
+    const { visible, hidden } = capThemeGroup({ theme: "css", items: [...rest, ...rollupEvents] });
+
+    // Five capped events, then the rollup — which survives despite the overflow.
+    expect(visible.map((u) => u.kind)).toEqual([
+      ...Array.from({ length: THEME_ITEM_CAP }, () => "event"),
+      "rollup",
+    ]);
+    expect(hidden).toHaveLength(3);
+    expect(hidden.every((u) => u.kind === "event")).toBe(true);
+  });
+
+  it("does not let a rollup consume cap room that plain events could use", () => {
     const rest = Array.from({ length: THEME_ITEM_CAP }, (_, i) =>
       event(`css-${i}`, { significance: 1 - i * 0.01 }),
     );
@@ -146,23 +165,7 @@ describe("capThemeGroup", () => {
     ];
     const { visible, hidden } = capThemeGroup({ theme: "css", items: [...rest, ...rollupEvents] });
 
-    expect(visible.every((u) => u.kind === "event")).toBe(true);
-    expect(hidden).toHaveLength(1);
-    expect(hidden[0]?.kind).toBe("rollup");
-  });
-
-  it("counts a rollup as one unit toward the cap", () => {
-    const rest = Array.from({ length: THEME_ITEM_CAP - 1 }, (_, i) =>
-      event(`css-${i}`, { significance: 1 - i * 0.01 }),
-    );
-    const rollupEvents = [
-      supportEvent("text-fit", "text-fit", "chrome", "150"),
-      supportEvent("text-fit", "text-fit", "chrome_android", "150"),
-      supportEvent("text-fit", "text-fit", "edge", "150"),
-    ];
-    const { visible, hidden } = capThemeGroup({ theme: "css", items: [...rest, ...rollupEvents] });
-
-    expect(visible).toHaveLength(THEME_ITEM_CAP);
+    expect(visible).toHaveLength(THEME_ITEM_CAP + 1);
     expect(visible.at(-1)?.kind).toBe("rollup");
     expect(hidden).toEqual([]);
   });

@@ -69,8 +69,8 @@ export const THEME_ITEM_CAP = 5;
 /**
  * A single rendered unit within a theme section: either a plain change event
  * or a browser-support rollup (which itself may fold several events into one
- * sentence). Renderers cap on units, not raw events, so a rollup always
- * counts as one — capping raw events first could truncate a rollup mid-way.
+ * sentence). Renderers work in units, not raw events — capping raw events
+ * could truncate a rollup mid-way and render a misleading partial sentence.
  */
 export type ThemeUnit =
   | { kind: "event"; key: string; event: ChangeEvent }
@@ -96,14 +96,22 @@ export const themeUnits = (items: ChangeEvent[]): ThemeUnit[] => {
 };
 
 /**
- * Caps a theme group's rendered units at `THEME_ITEM_CAP`. `hidden` carries
- * the folded units themselves (not just a count) so the reader can render
- * them inside a `<details>`; the email renderer only needs `hidden.length`.
+ * Caps a theme group's plain events at `THEME_ITEM_CAP`. Rollups are exempt
+ * and always render: a rollup is already the compressed form of many events,
+ * so folding it away would hide the densest line in the section to save one
+ * sentence. The cap exists to bound a long list of individual items, and a
+ * rollup is the opposite of that.
+ *
+ * `hidden` carries the folded units themselves rather than a count, so the
+ * reader can reveal them; the email renderer needs only `hidden.length`.
  */
 export const capThemeGroup = (group: ThemeGroup): CappedTheme => {
   const units = themeUnits(group.items);
+  const events = units.filter((unit) => unit.kind === "event");
+  const rollups = units.filter((unit) => unit.kind === "rollup");
   return {
-    visible: units.slice(0, THEME_ITEM_CAP),
-    hidden: units.slice(THEME_ITEM_CAP),
+    // Events before rollups, matching the order themeUnits already produces.
+    visible: [...events.slice(0, THEME_ITEM_CAP), ...rollups],
+    hidden: events.slice(THEME_ITEM_CAP),
   };
 };
