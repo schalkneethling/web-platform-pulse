@@ -195,7 +195,7 @@ describe("renderDigestEmail", () => {
       }
     });
 
-    it("treats a rollup as one unit, rendering it whole even at the cap boundary", () => {
+    it("renders a rollup whole even when the theme's plain items overflow", () => {
       const support = (browser: string, version: string): ChangeEvent =>
         event(`text-fit:${browser}`, {
           type: "browser-support",
@@ -212,16 +212,18 @@ describe("renderDigestEmail", () => {
           ],
         });
 
-      const rest = themeItems(THEME_ITEM_CAP - 1);
+      const rest = themeItems(THEME_ITEM_CAP + 3);
       const rollupEvents = [support("chrome", "150"), support("edge", "150")];
       const { html, text } = renderDigestEmail(digest([...rest, ...rollupEvents]));
 
+      // Rollups are exempt from the cap, so the sentence survives intact even
+      // though three plain items in the same theme were folded away.
       expect(html).toContain(
         '<p>Chrome and Edge 150 now support <a href="https://webstatus.dev/features/text-fit">text-fit</a>.</p>',
       );
       expect(text).toContain("- Chrome and Edge 150 now support text-fit.");
-      expect(html).not.toMatch(/\+\d+ more/);
-      expect(text).not.toMatch(/^\+\d+ more$/m);
+      expect(html).toContain("  <p>+3 more</p>");
+      expect(text).toContain("+3 more");
     });
   });
 });
