@@ -104,6 +104,129 @@
         }
       }
     },
+    "array-grouping": {
+      "kind": "feature",
+      "name": "Array grouping",
+      "description": "Object.groupBy and Map.groupBy group items in an iterable into a plain object or Map.",
+      "group": ["javascript"],
+      "spec": ["https://tc39.es/proposal-array-grouping/"],
+      "status": {
+        "baseline": "high",
+        "baseline_low_date": "2024-02-05",
+        "baseline_high_date": "2026-05-21",
+        "support": {
+          "chrome": "117",
+          "chrome_android": "117",
+          "edge": "117",
+          "firefox": "119",
+          "firefox_android": "119",
+          "safari": "17.4",
+          "safari_ios": "17.4"
+        }
+      }
+    },
+    "array-from-async": {
+      "kind": "feature",
+      "name": "Array.fromAsync",
+      "description": "Array.fromAsync creates an array from an async iterable, iterable, or array-like object.",
+      "group": ["javascript"],
+      "spec": ["https://tc39.es/proposal-array-from-async/"],
+      "status": {
+        "baseline": "low",
+        "baseline_low_date": "2026-05-19",
+        "support": {
+          "chrome": "121",
+          "chrome_android": "121",
+          "edge": "121",
+          "firefox": "115",
+          "firefox_android": "115",
+          "safari": "17.4",
+          "safari_ios": "17.4"
+        }
+      }
+    },
+    "iterator-helpers": {
+      "kind": "feature",
+      "name": "Iterator helpers",
+      "description": "Methods such as map, filter and take on the Iterator prototype.",
+      "group": ["javascript"],
+      "spec": ["https://tc39.es/proposal-iterator-helpers/"],
+      "status": {
+        "baseline": "high",
+        "baseline_low_date": "2025-01-14",
+        "baseline_high_date": "2026-05-21",
+        "support": {
+          "chrome": "122",
+          "chrome_android": "122",
+          "edge": "122",
+          "firefox": "131",
+          "firefox_android": "131",
+          "safari": "18.4",
+          "safari_ios": "18.4"
+        }
+      }
+    },
+    "set-methods": {
+      "kind": "feature",
+      "name": "Set methods",
+      "description": "Set.prototype.union, intersection, difference and related composition methods.",
+      "group": ["javascript"],
+      "spec": ["https://tc39.es/proposal-set-methods/"],
+      "status": {
+        "baseline": "low",
+        "baseline_low_date": "2026-05-19",
+        "support": {
+          "chrome": "122",
+          "chrome_android": "122",
+          "edge": "122",
+          "firefox": "127",
+          "firefox_android": "127",
+          "safari": "17",
+          "safari_ios": "17"
+        }
+      }
+    },
+    "promise-with-resolvers": {
+      "kind": "feature",
+      "name": "Promise.withResolvers",
+      "description": "Promise.withResolvers returns a new Promise object together with its resolve and reject functions.",
+      "group": ["javascript"],
+      "spec": ["https://tc39.es/proposal-promise-with-resolvers/"],
+      "status": {
+        "baseline": "high",
+        "baseline_low_date": "2024-03-19",
+        "baseline_high_date": "2026-05-21",
+        "support": {
+          "chrome": "119",
+          "chrome_android": "119",
+          "edge": "119",
+          "firefox": "121",
+          "firefox_android": "121",
+          "safari": "17.4",
+          "safari_ios": "17.4"
+        }
+      }
+    },
+    "regexp-v-flag": {
+      "kind": "feature",
+      "name": "RegExp v flag",
+      "description": "The v flag enables set notation and properties of strings in regular expressions.",
+      "group": ["javascript"],
+      "spec": ["https://tc39.es/proposal-regexp-v-flag/"],
+      "status": {
+        "baseline": "low",
+        "baseline_low_date": "2026-05-19",
+        "support": {
+          "chrome": "112",
+          "chrome_android": "112",
+          "edge": "112",
+          "firefox": "116",
+          "firefox_android": "116",
+          "safari": "17",
+          "safari_ios": "17"
+        }
+      }
+    },
     "masonry-layout": {
       "kind": "moved",
       "redirect_target": "masonry"

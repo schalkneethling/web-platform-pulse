@@ -77,12 +77,12 @@ describe("runPipeline", () => {
     expect(first.digestIds).toEqual([]);
 
     const second = await run([webFeaturesAdapter("new.json")]);
-    expect(second.ingest.created).toBe(4);
+    expect(second.ingest.created).toBe(10);
     expect(second.digestIds).toHaveLength(1);
 
     const subscriber = await sql<{ id: string }[]>`select id from subscriber`;
     const digest = await getLatestDigest(sql, subscriber[0]!.id);
-    expect(digest?.items).toHaveLength(4);
+    expect(digest?.items).toHaveLength(10);
     const lh = digest?.items.find((i) => i.subject.kind === "feature" && i.subject.id === "lh");
     expect(lh?.title).toMatch(/widely available/i);
     expect(lh?.provenance[0]?.url).toBe("https://webstatus.dev/features/lh");
@@ -108,12 +108,12 @@ describe("runPipeline", () => {
     ];
     await run(adapters("old.json"));
     const second = await run(adapters("new.json"));
-    expect(second.ingest.created).toBe(15);
+    expect(second.ingest.created).toBe(21);
     expect(second.sourceFailures).toEqual([]);
 
     const subscriber = await sql<{ id: string }[]>`select id from subscriber`;
     const digest = await getLatestDigest(sql, subscriber[0]!.id);
-    expect(digest?.items).toHaveLength(15);
+    expect(digest?.items).toHaveLength(21);
 
     const types = new Set(digest?.items.map((i) => i.type));
     expect(types).toContain("baseline-change");
@@ -137,7 +137,7 @@ describe("runPipeline", () => {
     };
     const summary = await run([webFeaturesAdapter("new.json"), broken]);
     expect(summary.sourceFailures).toEqual(["broken-feed"]);
-    expect(summary.ingest.created).toBe(4);
+    expect(summary.ingest.created).toBe(10);
     expect(summary.digestIds).toHaveLength(1);
 
     const state = await sql<{ source_id: string }[]>`select source_id from source_state`;
