@@ -138,3 +138,17 @@ body {
 .digest-item__source-link {
   color: var(--color-accent);
 }
+
+.digest__overflow {
+  margin-block-start: var(--space-s);
+}
+
+.digest__overflow-summary {
+  cursor: pointer;
+  color: var(--color-accent);
+  font-size: var(--font-size-s);
+}
+
+.digest__overflow .digest__items {
+  margin-block-start: var(--space-m);
+}

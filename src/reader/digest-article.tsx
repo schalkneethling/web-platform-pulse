@@ -1,6 +1,12 @@
 import { Fragment } from "react";
-import { groupByTheme, THEME_LABELS, type DigestView } from "../core/digest.ts";
-import { splitBrowserSupport, type SupportRollup } from "../core/support-rollup.ts";
+import {
+  capThemeGroup,
+  groupByTheme,
+  THEME_LABELS,
+  type DigestView,
+  type ThemeUnit,
+} from "../core/digest.ts";
+import type { SupportRollup } from "../core/support-rollup.ts";
 import type { ChangeEvent } from "../core/types.ts";
 
 const formatDate = (iso: string): string =>
@@ -44,6 +50,10 @@ const RollupItem = ({ rollup }: { rollup: SupportRollup }) => (
   </li>
 );
 
+/** Renders a unit as whichever of DigestItem/RollupItem it wraps, keyed for both lists. */
+const DigestUnit = ({ unit }: { unit: ThemeUnit }) =>
+  unit.kind === "event" ? <DigestItem item={unit.event} /> : <RollupItem rollup={unit.rollup} />;
+
 export const DigestArticle = ({ digest }: { digest: DigestView }) => (
   <article className="digest" aria-labelledby="digest-title">
     <header className="digest__header">
@@ -56,7 +66,8 @@ export const DigestArticle = ({ digest }: { digest: DigestView }) => (
       </p>
     </header>
     {groupByTheme(digest.items).map((group) => {
-      const { rest, rollups } = splitBrowserSupport(group.items);
+      const { visible, hidden } = capThemeGroup(group);
+      const label = THEME_LABELS[group.theme] ?? group.theme;
       return (
         <section
           key={group.theme}
@@ -64,16 +75,25 @@ export const DigestArticle = ({ digest }: { digest: DigestView }) => (
           aria-labelledby={`theme-${group.theme}`}
         >
           <h3 className="digest__theme-title" id={`theme-${group.theme}`}>
-            {THEME_LABELS[group.theme] ?? group.theme}
+            {label}
           </h3>
           <ol className="digest__items">
-            {rest.map((item) => (
-              <DigestItem key={item.id} item={item} />
-            ))}
-            {rollups.map((rollup) => (
-              <RollupItem key={rollup.lead} rollup={rollup} />
+            {visible.map((unit) => (
+              <DigestUnit key={unit.key} unit={unit} />
             ))}
           </ol>
+          {hidden.length > 0 && (
+            <details className="digest__overflow">
+              <summary className="digest__overflow-summary">
+                {hidden.length} more in {label}
+              </summary>
+              <ol className="digest__items">
+                {hidden.map((unit) => (
+                  <DigestUnit key={unit.key} unit={unit} />
+                ))}
+              </ol>
+            </details>
+          )}
         </section>
       );
     })}
