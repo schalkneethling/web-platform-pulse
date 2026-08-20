@@ -139,11 +139,16 @@ export const saveSourceState = async (
   `;
 };
 
-/** The single operator of v1: a real subscriber row with a real subscription. */
+/**
+ * The operator is always confirmed — it's seeded from a trusted env var,
+ * not the public signup form, so it skips the double opt-in other
+ * subscribers go through (§17).
+ */
 export const ensureOperator = async (sql: Sql, email: string): Promise<string> => {
   const rows = await sql<{ id: string }[]>`
-    insert into subscriber (email) values (${email})
-    on conflict (email) do update set email = excluded.email
+    insert into subscriber (email, confirmed_at) values (${email}, now())
+    on conflict (email) do update
+      set email = excluded.email, confirmed_at = coalesce(subscriber.confirmed_at, now())
     returning id
   `;
   const subscriberId = rows[0]!.id;
@@ -273,10 +278,12 @@ export const assembleDigest = async (
   });
 };
 
-/** The operator is v1's only subscriber; the reader renders their digest. */
+/** The operator is the earliest confirmed subscriber; the reader renders their digest. */
 export const findOperator = async (sql: Sql): Promise<string | null> => {
   const rows = await sql<{ id: string }[]>`
-    select id from subscriber order by created_at limit 1
+    select id from subscriber
+    where confirmed_at is not null and unsubscribed_at is null
+    order by created_at limit 1
   `;
   return rows[0]?.id ?? null;
 };
@@ -340,7 +347,8 @@ export const digestsAwaitingDelivery = async (
     select d.id as digest_id, s.email
     from digest d
     join subscriber s on s.id = d.subscriber_id
-    where not exists (
+    where s.unsubscribed_at is null
+      and not exists (
       select 1 from delivery dv
       where dv.digest_id = d.id and dv.channel = ${channelId} and dv.status = 'sent'
     )
