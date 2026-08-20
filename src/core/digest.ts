@@ -1,3 +1,4 @@
+import { splitBrowserSupport, type SupportRollup } from "./support-rollup.ts";
 import type { ChangeEvent } from "./types.ts";
 
 /** A digest as consumers see it: the reader and the email channel render this. */
@@ -61,3 +62,48 @@ export const orderForDigest = (events: ChangeEvent[]): ChangeEvent[] =>
       b.significance - a.significance ||
       a.title.localeCompare(b.title),
   );
+
+/** Per-theme cap on rendered units, shared by every renderer. */
+export const THEME_ITEM_CAP = 5;
+
+/**
+ * A single rendered unit within a theme section: either a plain change event
+ * or a browser-support rollup (which itself may fold several events into one
+ * sentence). Renderers cap on units, not raw events, so a rollup always
+ * counts as one — capping raw events first could truncate a rollup mid-way.
+ */
+export type ThemeUnit =
+  | { kind: "event"; key: string; event: ChangeEvent }
+  | { kind: "rollup"; key: string; rollup: SupportRollup };
+
+export interface CappedTheme {
+  visible: ThemeUnit[];
+  hidden: ThemeUnit[];
+}
+
+/**
+ * Splits a theme group's items into rendered units in the exact order
+ * today's renderers already produce: `rest` (untouched events) first, then
+ * rollups. `key` matches the React keys the reader already uses (`item.id`,
+ * `rollup.lead`) so it does not have to duplicate key logic.
+ */
+export const themeUnits = (items: ChangeEvent[]): ThemeUnit[] => {
+  const { rest, rollups } = splitBrowserSupport(items);
+  return [
+    ...rest.map((event): ThemeUnit => ({ kind: "event", key: event.id, event })),
+    ...rollups.map((rollup): ThemeUnit => ({ kind: "rollup", key: rollup.lead, rollup })),
+  ];
+};
+
+/**
+ * Caps a theme group's rendered units at `THEME_ITEM_CAP`. `hidden` carries
+ * the folded units themselves (not just a count) so the reader can render
+ * them inside a `<details>`; the email renderer only needs `hidden.length`.
+ */
+export const capThemeGroup = (group: ThemeGroup): CappedTheme => {
+  const units = themeUnits(group.items);
+  return {
+    visible: units.slice(0, THEME_ITEM_CAP),
+    hidden: units.slice(THEME_ITEM_CAP),
+  };
+};
