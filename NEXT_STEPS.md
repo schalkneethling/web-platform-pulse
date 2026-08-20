@@ -29,13 +29,6 @@ a per-theme cap with a "N more" fold in email and reader before the digest
 bloats. The subscription `significance_floor` already provides a blunt
 instrument; this slice is about presentation.
 
-## Slice E — Richer taxonomy (group-graph walk)
-
-Replace the spec-URL heuristic in `src/core/web-features/diff.ts` with a
-taxonomy derived from the web-features group graph; browser-specs group
-data can serve the other adapters. Gets more valuable with every source
-added — it is what keeps a fatter digest well grouped.
-
 ## Slice F — Reader SPA deployment and multi-subscriber
 
 Parked until the digest is shared beyond the operator: replace the
@@ -62,10 +55,16 @@ people read.
 
 - `issue` — `number`, `title`, `intro`, `status` (`draft` | `published`),
   `window_start`, `window_end`, `published_at`. Not per-subscriber: one row
-  is one Monday morning email.
+  is one Monday morning email. `number` is `unique`, so a second `open` for
+  the same week collides instead of cutting a rival draft.
 - `issue_item` — `issue_id`, `event_id`, `position`, `section`, and `note`,
-  the editorial annotation. The `note` is the whole point; an issue whose
-  items are all un-annotated is a changelog and should read as a warning.
+  the editorial annotation. Same constraint shape as `digest_item`:
+  `issue_id references issue(id) on delete cascade`, `event_id references
+change_event(id)`, and `unique (issue_id, event_id)` plus `unique
+(issue_id, position)` so a re-run of `open` can't double-insert an item or
+  leave two items fighting over one slot. The `note` is the whole point; an
+  issue whose items are all un-annotated is a changelog and should read as a
+  warning.
 
 `change_event` stays untouched — curation is a selection over it, never a
 mutation of it, so a re-run of the pipeline can never disturb a draft.
@@ -86,8 +85,11 @@ subcommands rather than a second binary:
 - `preview` — render the draft through the email template to Mailpit, so the
   Sunday read-through happens in the real artifact.
 - `publish` — flip `status`, stamp `published_at`, and fan out to confirmed
-  subscribers. Idempotent like the rest of the pipeline: publishing twice
-  sends once.
+  subscribers. Idempotent the same way the daily send is: a `delivery`-shaped
+  record per (issue, subscriber, channel) written before the provider call,
+  with a partial unique index on the sent rows, so publishing twice — or
+  resuming after a crash mid-fan-out — sends once and only retries what
+  failed.
 
 **Deliberately deferred.** Per-subscriber filtering (`taxonomies`,
 `significance_floor`) does not apply to the issue — it is one hand-written
@@ -99,6 +101,13 @@ should be cheap enough to run every week even when the honest output is a
 short issue.
 
 ---
+
+## Slice E — Richer taxonomy (group-graph walk)
+
+Replace the spec-URL heuristic in `src/core/web-features/diff.ts` with a
+taxonomy derived from the web-features group graph; browser-specs group
+data can serve the other adapters. Gets more valuable with every source
+added — it is what keeps a fatter digest well grouped.
 
 ## Researched and rejected (2026-07)
 
