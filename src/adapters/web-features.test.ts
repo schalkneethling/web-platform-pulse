@@ -34,9 +34,15 @@ describe("web-features adapter", () => {
     });
     const { events, cursor } = await second.run(first.cursor);
     expect(events.map((e) => e.dedupeKey).sort()).toEqual([
+      "web-features:baseline:array-from-async:false->low",
+      "web-features:baseline:array-grouping:low->high",
       "web-features:baseline:container-style-queries:false->low",
       "web-features:baseline:contrast-color:false->low",
+      "web-features:baseline:iterator-helpers:low->high",
       "web-features:baseline:lh:low->high",
+      "web-features:baseline:promise-with-resolvers:low->high",
+      "web-features:baseline:regexp-v-flag:false->low",
+      "web-features:baseline:set-methods:false->low",
       "web-features:support:crisp-edges:safari:7",
     ]);
     expect(cursor["contrast-color"]).toBeDefined();

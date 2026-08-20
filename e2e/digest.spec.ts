@@ -27,3 +27,57 @@ test("the newly-available transition is also present", async ({ page }) => {
   const item = page.getByRole("article").locator(".digest-item", { hasText: "Style queries" });
   await expect(item).toContainText(/newly available/i);
 });
+
+// #55 (Slice D.4): the reader folds overflow items behind a native
+// <details>/<summary> (#54). The web-features fixture pair now carries six
+// JavaScript (tc39.es) baseline transitions against THEME_ITEM_CAP of 5, so
+// the "javascript" theme renders one folded unit, while the CSS theme stays
+// at its existing 4 units and must show no fold at all.
+test("an overflowing theme folds its extra items behind a collapsed details/summary", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const jsTheme = page.getByRole("article").locator(".digest__theme", { hasText: "JavaScript" });
+  const details = jsTheme.locator("details.digest__overflow");
+  await expect(details).toBeAttached();
+  await expect(details).not.toHaveAttribute("open");
+
+  const summary = details.getByText(/^\d+ more in JavaScript$/);
+  await expect(summary).toBeVisible();
+  await expect(summary).toHaveText("1 more in JavaScript");
+
+  // The folded item is not visible until the summary is activated.
+  const hiddenItem = details.locator(".digest-item");
+  await expect(hiddenItem).not.toBeVisible();
+
+  await summary.click();
+
+  await expect(details).toHaveAttribute("open", "");
+  await expect(hiddenItem).toBeVisible();
+});
+
+test("the folded summary is keyboard-operable", async ({ page }) => {
+  await page.goto("/");
+
+  const jsTheme = page.getByRole("article").locator(".digest__theme", { hasText: "JavaScript" });
+  const details = jsTheme.locator("details.digest__overflow");
+  const summary = details.getByText(/^\d+ more in JavaScript$/);
+  const hiddenItem = details.locator(".digest-item");
+
+  await expect(hiddenItem).not.toBeVisible();
+
+  await summary.focus();
+  await page.keyboard.press("Enter");
+
+  await expect(details).toHaveAttribute("open", "");
+  await expect(hiddenItem).toBeVisible();
+});
+
+test("a theme under the cap renders no overflow fold", async ({ page }) => {
+  await page.goto("/");
+
+  const cssTheme = page.getByRole("article").locator(".digest__theme", { hasText: "CSS" });
+  await expect(cssTheme).toBeVisible();
+  await expect(cssTheme.locator("details.digest__overflow")).toHaveCount(0);
+});
