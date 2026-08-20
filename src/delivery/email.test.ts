@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { DigestView } from "../core/digest.ts";
+import { THEME_ITEM_CAP, type DigestView } from "../core/digest.ts";
 import type { ChangeEvent } from "../core/types.ts";
 import { renderDigestEmail } from "./email.ts";
 
@@ -150,5 +150,80 @@ describe("renderDigestEmail", () => {
     );
     expect(html).not.toContain("<script>");
     expect(html).toContain("selector &lt;script&gt;&quot;&amp;&quot;&lt;/script&gt;");
+  });
+
+  describe("folding", () => {
+    const themeItems = (count: number): ChangeEvent[] =>
+      Array.from({ length: count }, (_, i) =>
+        event(`css-${i}`, { title: `css item ${i}`, significance: 1 - i * 0.01 }),
+      );
+
+    it("folds a theme over the cap to the cap's worth, with an overflow line", () => {
+      const items = themeItems(THEME_ITEM_CAP + 3);
+      const { html, text } = renderDigestEmail(digest(items));
+
+      for (const item of items.slice(0, THEME_ITEM_CAP)) {
+        expect(html).toContain(item.title);
+        expect(text).toContain(item.title);
+      }
+      expect(html).toContain("  <p>+3 more</p>");
+      expect(text).toContain("+3 more");
+    });
+
+    it("does not render the titles of folded items", () => {
+      const items = themeItems(THEME_ITEM_CAP + 3);
+      const { html, text } = renderDigestEmail(digest(items));
+
+      for (const item of items.slice(THEME_ITEM_CAP)) {
+        expect(html).not.toContain(item.title);
+        expect(text).not.toContain(item.title);
+      }
+    });
+
+    it("renders every item and no overflow line for a theme at or under the cap", () => {
+      const atCap = themeItems(THEME_ITEM_CAP);
+      const underCap = themeItems(THEME_ITEM_CAP - 1);
+
+      for (const items of [atCap, underCap]) {
+        const { html, text } = renderDigestEmail(digest(items));
+        for (const item of items) {
+          expect(html).toContain(item.title);
+          expect(text).toContain(item.title);
+        }
+        expect(html).not.toMatch(/\+\d+ more/);
+        expect(text).not.toMatch(/^\+\d+ more$/m);
+      }
+    });
+
+    it("renders a rollup whole even when the theme's plain items overflow", () => {
+      const support = (browser: string, version: string): ChangeEvent =>
+        event(`text-fit:${browser}`, {
+          type: "browser-support",
+          subject: { kind: "feature", id: "text-fit" },
+          title: `${browser} ${version} supports text-fit`,
+          after: { browser, version },
+          provenance: [
+            {
+              sourceId: "web-features",
+              url: "https://webstatus.dev/features/text-fit",
+              title: "text-fit",
+              observedAt: "2026-07-15T00:00:00Z",
+            },
+          ],
+        });
+
+      const rest = themeItems(THEME_ITEM_CAP + 3);
+      const rollupEvents = [support("chrome", "150"), support("edge", "150")];
+      const { html, text } = renderDigestEmail(digest([...rest, ...rollupEvents]));
+
+      // Rollups are exempt from the cap, so the sentence survives intact even
+      // though three plain items in the same theme were folded away.
+      expect(html).toContain(
+        '<p>Chrome and Edge 150 now support <a href="https://webstatus.dev/features/text-fit">text-fit</a>.</p>',
+      );
+      expect(text).toContain("- Chrome and Edge 150 now support text-fit.");
+      expect(html).toContain("  <p>+3 more</p>");
+      expect(text).toContain("+3 more");
+    });
   });
 });

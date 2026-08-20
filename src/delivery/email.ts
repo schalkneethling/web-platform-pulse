@@ -1,6 +1,6 @@
 import type { DeliveryChannel } from "../core/delivery.ts";
-import { groupByTheme, THEME_LABELS, type DigestView } from "../core/digest.ts";
-import { listJoin, splitBrowserSupport, type SupportRollup } from "../core/support-rollup.ts";
+import { capThemeGroup, groupByTheme, THEME_LABELS, type DigestView } from "../core/digest.ts";
+import { listJoin, type SupportRollup } from "../core/support-rollup.ts";
 import type { ChangeEvent } from "../core/types.ts";
 
 export interface EmailContent {
@@ -78,11 +78,16 @@ export const renderDigestEmail = (digest: DigestView): EmailContent => {
     "<h1>Platform Pulse</h1>",
     `  <p>${count} ${noun} across the web platform, covering ${window}.</p>`,
     ...groups.flatMap((group) => {
-      const { rest, rollups } = splitBrowserSupport(group.items);
+      const { visible, hidden } = capThemeGroup(group);
+      // themeUnits always orders events before rollups, so splitting `visible`
+      // back into its two halves reproduces the uncapped <ul>/<p> markup exactly.
+      const events = visible.flatMap((unit) => (unit.kind === "event" ? [unit.event] : []));
+      const rollups = visible.flatMap((unit) => (unit.kind === "rollup" ? [unit.rollup] : []));
       return [
         `  <h2>${escapeHtml(themeLabel(group.theme))}</h2>`,
-        ...(rest.length > 0 ? ["  <ul>", ...rest.map(itemHtml), "  </ul>"] : []),
+        ...(events.length > 0 ? ["  <ul>", ...events.map(itemHtml), "  </ul>"] : []),
         ...rollups.map(rollupHtml),
+        ...(hidden.length > 0 ? [`  <p>+${hidden.length} more</p>`] : []),
       ];
     }),
   ].join("\n");
@@ -91,13 +96,16 @@ export const renderDigestEmail = (digest: DigestView): EmailContent => {
     `Platform Pulse — ${count} ${noun}`,
     `Covering ${window}`,
     ...groups.flatMap((group) => {
-      const { rest, rollups } = splitBrowserSupport(group.items);
+      const { visible, hidden } = capThemeGroup(group);
+      const events = visible.flatMap((unit) => (unit.kind === "event" ? [unit.event] : []));
+      const rollups = visible.flatMap((unit) => (unit.kind === "rollup" ? [unit.rollup] : []));
       return [
         "",
         `# ${themeLabel(group.theme)}`,
         "",
-        ...rest.map(itemText),
+        ...events.map(itemText),
         ...rollups.map(rollupText),
+        ...(hidden.length > 0 ? [`+${hidden.length} more`] : []),
       ];
     }),
   ].join("\n");
