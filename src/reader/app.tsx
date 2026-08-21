@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { DigestView } from "../core/digest.ts";
 import { DigestArticle } from "./digest-article.tsx";
+import { fetchLatestDigest } from "./digest-source.ts";
+import { createReaderClient } from "./supabase.ts";
 
 type LoadState =
   | { status: "loading" }
@@ -13,12 +15,12 @@ export const App = () => {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/digest/latest")
-      .then((response) => {
-        if (!response.ok) throw new Error(`digest fetch failed: ${response.status}`);
-        return response.json() as Promise<{ digest: DigestView | null }>;
-      })
-      .then(({ digest }) => {
+    // createReaderClient throws on a bundle built without the Supabase env
+    // vars, so it has to run inside the chain: a misconfigured deploy should
+    // reach the error branch, not escape the effect.
+    Promise.resolve()
+      .then(() => fetchLatestDigest(createReaderClient()))
+      .then((digest) => {
         if (cancelled) return;
         setState(digest === null ? { status: "empty" } : { status: "ready", digest });
       })
