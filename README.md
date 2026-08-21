@@ -109,9 +109,20 @@ walkthrough and what comes next.
   `smtps://` scheme matters — port 465 expects TLS from the first byte).
 - **GitHub Actions** (`.github/workflows/pulse.yml`) runs the pipeline daily at
   07:00 UTC, with `workflow_dispatch` for manual runs.
+- **Cloudflare Workers** hosts the reader as static assets (`wrangler.jsonc`),
+  deployed by `.github/workflows/deploy.yml` on every push to `main`.
 
 Repository secrets: `DATABASE_URL`, `PULSE_SMTP_URL`, `PULSE_SUBSCRIBER_EMAIL`,
-`PULSE_EMAIL_FROM`.
+`PULSE_EMAIL_FROM`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+
+The two `VITE_` values are compiled into the bundle and are public by design:
+the anon key selects a Postgres role, and `supabase/migrations/` is what
+decides what that role may read. The Cloudflare API token needs only the
+"Edit Cloudflare Workers" permission.
+
+The reader shows the most recent digest to anyone who visits. That is
+acceptable only while the deployment is single-tenant — see `NEXT_STEPS.md`.
 
 ## Project layout
 

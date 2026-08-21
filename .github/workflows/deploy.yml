@@ -1,0 +1,95 @@
+name: Deploy reader
+
+# Publishes the reader SPA to Cloudflare Workers static assets after CI has
+# passed on main. Only the built bundle is deployed -- the pipeline itself
+# keeps running from pulse.yml, unchanged.
+#
+# This is gated on CI rather than triggered alongside it. Two workflows both
+# firing on `push: main` race, and the deploy would publish a commit whose
+# tests had failed.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # For redeploying after fixing a secret, without an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deploys are not raced, but nor are they cancelled halfway: an interrupted
+# deploy whose successor then fails would leave main serving an older commit
+# with nothing pointing at why.
+concurrency:
+  group: deploy-reader
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # workflow_run checks out the default branch by default, not the
+          # commit that was tested.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+      - uses: voidzero-dev/setup-vp@v1.15.0
+        with:
+          node-version: "24"
+          cache: true
+      - run: vp install
+
+      - name: Check the deploy is configured
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=""
+          [ -z "$SUPABASE_URL" ] && missing="$missing VITE_SUPABASE_URL"
+          [ -z "$ANON_KEY" ] && missing="$missing VITE_SUPABASE_ANON_KEY"
+          [ -z "$CF_TOKEN" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$CF_ACCOUNT" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            exit 1
+          fi
+          # The anon key and the service_role key are both JWTs for the same
+          # project and sit next to each other in the Supabase dashboard.
+          # Pasting the wrong one here would publish a BYPASSRLS credential to
+          # the public internet, and every other check in this pipeline would
+          # still pass. So read the role out of the token rather than trusting
+          # that the right one was pasted.
+          payload=$(printf '%s' "$ANON_KEY" | cut -d. -f2 | tr '_-' '/+')
+          # JWT base64url drops padding; GNU base64 rejects it without.
+          case $(( ${#payload} % 4 )) in
+            2) payload="$payload==" ;;
+            3) payload="$payload=" ;;
+          esac
+          role=$(printf '%s' "$payload" | base64 -d 2>/dev/null \
+            | grep -o '"role"[[:space:]]*:[[:space:]]*"[^"]*"' \
+            | sed 's/.*"\([^"]*\)"$/\1/')
+          if [ "$role" != "anon" ]; then
+            echo "::error::VITE_SUPABASE_ANON_KEY must be the anon key. Its role claim is '${role:-unreadable}', not 'anon'. This value is compiled into a public bundle."
+            exit 1
+          fi
+
+      - name: Build the reader
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: vp run build
+
+      - uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Pinned: an unpinned deploy resolves whatever wrangler npm serves
+          # that morning, which is not the version this config was validated
+          # against.
+          wranglerVersion: "4.125.0"
