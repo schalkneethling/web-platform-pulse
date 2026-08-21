@@ -34,3 +34,8 @@ jobs:
       # (see scripts/dev-db.ts, scripts/dev-mail.ts), which is available on
       # ubuntu-latest, so no database secrets are needed here.
       - run: vp test
+      # The reader is deployed from main (deploy.yml, gated on this workflow),
+      # so a build failure has to surface on the PR rather than after merge in
+      # a job with no tests to explain it. No Supabase values are needed: they
+      # only have to exist at runtime, and deploy.yml checks for them there.
+      - run: vp run build
