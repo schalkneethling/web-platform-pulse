@@ -10,6 +10,7 @@
     "prepare": "vp config",
     "pulse": "bun run src/cli/index.ts",
     "db:up": "bun run scripts/db-up.ts",
+    "dev:reader": "bun run scripts/dev-reader.ts",
     "test:e2e": "playwright test",
     "knip": "knip"
   },

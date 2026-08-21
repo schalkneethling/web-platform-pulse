@@ -57,8 +57,14 @@ vp install                 # install dependencies
 vp run db:up               # disposable Postgres in Docker, migrations applied
 vp run pulse -- --data tests/fixtures/web-features/old.json   # seed the cursor
 vp run pulse -- --data tests/fixtures/web-features/new.json   # emit a digest
-vp dev                     # reader at http://localhost:5173
+vp run dev:reader          # reader at http://localhost:5173
 ```
+
+The reader reads through PostgREST with an anon key rather than through the
+dev server, so `vp run dev:reader` is the entry point: it brings up a local
+PostgREST over the same Postgres and passes `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` to `vp dev`. Plain `vp dev` still serves the app,
+but without those two the page can only render its error state.
 
 The pipeline CLI (`vp run pulse`) pulls live data when run without flags.
 Useful flags and environment variables:
@@ -88,6 +94,10 @@ vp run test:e2e   # Playwright against the seeded reader
 
 Integration tests deliver real email into [Mailpit](https://mailpit.axllent.org)
 (`smtp://localhost:54330`, UI on `http://localhost:54331`) and assert on its API.
+
+The e2e run adds a PostgREST container (`http://localhost:54332`) so the
+browser exercises the same client, the same anon role and the same
+row-level-security policies the deployed reader will.
 
 ## Deployment (prototype)
 
