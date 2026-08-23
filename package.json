@@ -12,6 +12,7 @@
     "db:up": "bun run scripts/db-up.ts",
     "dev:reader": "bun run scripts/dev-reader.ts",
     "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "knip": "knip"
   },
   "dependencies": {
