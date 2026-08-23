@@ -39,3 +39,48 @@ jobs:
       # a job with no tests to explain it. No Supabase values are needed: they
       # only have to exist at runtime, and deploy.yml checks for them there.
       - run: vp run build
+
+  # Split from `check` rather than appended to it: the browser download and
+  # the container startup are minutes of work that the unit and integration
+  # tests should not wait behind, and a Playwright failure reads better as its
+  # own red job. deploy.yml gates on this workflow as a whole, so main cannot
+  # deploy past a failure here.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: voidzero-dev/setup-vp@v1.15.0
+        with:
+          node-version: "24"
+          cache: true
+      - run: vp install
+
+      # Keyed on the lockfile, so a Playwright version bump misses the cache
+      # and re-downloads rather than running new code against old browsers.
+      # v6 rather than v4: the runner deprecation-warns on v4's Node 20
+      # runtime. v6 only migrated the action to ESM; the inputs are the same.
+      - uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - run: vp run test:e2e:install
+
+      # e2e/global-setup.ts brings up Postgres and PostgREST itself, via the
+      # same scripts/ helpers used locally -- Docker is present on
+      # ubuntu-latest, and the PostgREST container asks for host-gateway so
+      # host.docker.internal resolves here as it does on Docker Desktop.
+      # No secrets: the run is seeded from committed fixtures.
+      - run: vp run test:e2e
+
+      # A failed browser test is close to unreadable without the trace.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
