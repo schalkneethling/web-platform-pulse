@@ -25,6 +25,10 @@ export default defineConfig({
     // PostgREST (see vite.config.ts), so the client code path is the one
     // production runs -- only the host differs.
     env: {
+      // Keeps the dev server's Varlock plugin on .env.test rather than
+      // 1Password. The two VITE_ values below still win: process env
+      // outranks every .env file.
+      APP_ENV: "test",
       VITE_SUPABASE_URL: `http://localhost:${PORT}`,
       VITE_SUPABASE_ANON_KEY: anonKey(),
     },

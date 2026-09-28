@@ -8,16 +8,20 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      # Every value the pipeline needs resolves from 1Password through
+      # .env.schema; this token is the only secret the repository holds.
+      APP_ENV: production
+      OP_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      # After install: the 1Password plugin is a package in node_modules.
+      # Exports the resolved values to the steps below, sensitive ones masked.
+      - uses: dmno-dev/varlock-action@v1.0.1
       - run: bun run src/cli/index.ts
         env:
           # Lifts the unauthenticated api.github.com rate limit for the
           # Deno and Bun release lookups.
           GITHUB_TOKEN: ${{ github.token }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PULSE_SMTP_URL: ${{ secrets.PULSE_SMTP_URL }}
-          PULSE_SUBSCRIBER_EMAIL: ${{ secrets.PULSE_SUBSCRIBER_EMAIL }}
-          PULSE_EMAIL_FROM: ${{ secrets.PULSE_EMAIL_FROM }}

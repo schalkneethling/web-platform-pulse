@@ -31,6 +31,12 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
+    env:
+      # Every value below resolves from 1Password through .env.schema; this
+      # token is the only secret the repository holds. The build step needs
+      # it too: the Vite plugin resolves the schema again.
+      APP_ENV: production
+      OP_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,29 +49,20 @@ jobs:
           cache: true
       - run: vp install
 
-      - name: Check the deploy is configured
-        env:
-          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # After install: the 1Password plugin is a package in node_modules.
+      # Fails the job if any required item is missing, and exports the rest
+      # to the steps below, sensitive ones masked.
+      - uses: dmno-dev/varlock-action@v1.0.1
+
+      - name: Check the anon key is the anon key
         run: |
-          missing=""
-          [ -z "$SUPABASE_URL" ] && missing="$missing VITE_SUPABASE_URL"
-          [ -z "$ANON_KEY" ] && missing="$missing VITE_SUPABASE_ANON_KEY"
-          [ -z "$CF_TOKEN" ] && missing="$missing CLOUDFLARE_API_TOKEN"
-          [ -z "$CF_ACCOUNT" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
-          if [ -n "$missing" ]; then
-            echo "::error::Missing repository secrets:$missing"
-            exit 1
-          fi
           # The anon key and the service_role key are both JWTs for the same
           # project and sit next to each other in the Supabase dashboard.
-          # Pasting the wrong one here would publish a BYPASSRLS credential to
-          # the public internet, and every other check in this pipeline would
-          # still pass. So read the role out of the token rather than trusting
-          # that the right one was pasted.
-          payload=$(printf '%s' "$ANON_KEY" | cut -d. -f2 | tr '_-' '/+')
+          # Putting the wrong one in 1Password would publish a BYPASSRLS
+          # credential to the public internet, and every other check in this
+          # pipeline would still pass. So read the role out of the token
+          # rather than trusting that the right one was pasted.
+          payload=$(printf '%s' "$VITE_SUPABASE_ANON_KEY" | cut -d. -f2 | tr '_-' '/+')
           # JWT base64url drops padding; GNU base64 rejects it without.
           case $(( ${#payload} % 4 )) in
             2) payload="$payload==" ;;
@@ -80,15 +77,12 @@ jobs:
           fi
 
       - name: Build the reader
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: vp run build
 
       - uses: cloudflare/wrangler-action@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           # Pinned: an unpinned deploy resolves whatever wrangler npm serves
           # that morning, which is not the version this config was validated
           # against.
