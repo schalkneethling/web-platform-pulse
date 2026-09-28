@@ -35,3 +35,7 @@ playwright-report
 !.vscode/
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# Varlock local overrides (values never belong in git)
+.env.local
+.env.*.local
