@@ -187,7 +187,8 @@ body {
   font: inherit;
 }
 
-.signup__button {
+/* Shared by the signup form and the token pages: one primary action. */
+.button {
   padding: var(--space-s) var(--space-m);
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-m);
@@ -197,12 +198,23 @@ body {
   cursor: pointer;
 }
 
-.signup__button:disabled {
+.button:disabled {
   opacity: 0.6;
   cursor: progress;
 }
 
 .signup__status {
+  min-block-size: 1.6em;
+  margin: var(--space-s) 0 0;
+  color: var(--color-muted);
+}
+
+.reader__token-action-title {
+  margin: 0 0 var(--space-s);
+  font-size: var(--font-size-l);
+}
+
+.reader__token-action-status {
   min-block-size: 1.6em;
   margin: var(--space-s) 0 0;
   color: var(--color-muted);

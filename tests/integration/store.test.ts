@@ -328,7 +328,7 @@ describe("delivery records (§10)", () => {
   it("a digest awaits delivery until the channel has sent it", async () => {
     const digestId = await assembleOne();
     expect(await digestsAwaitingDelivery(sql, "email")).toEqual([
-      { digestId, email: "operator@example.com" },
+      { digestId, email: "operator@example.com", unsubscribeToken: expect.any(String) },
     ]);
 
     const view = await getDigest(sql, digestId);
@@ -342,7 +342,7 @@ describe("delivery records (§10)", () => {
     const digestId = await assembleOne();
     await recordDelivery(sql, digestId, "email", { status: "failed", error: "ECONNREFUSED" });
     expect(await digestsAwaitingDelivery(sql, "email")).toEqual([
-      { digestId, email: "operator@example.com" },
+      { digestId, email: "operator@example.com", unsubscribeToken: expect.any(String) },
     ]);
 
     await recordDelivery(sql, digestId, "email", { status: "sent" });
@@ -361,7 +361,7 @@ describe("delivery records (§10)", () => {
     const digestId = await assembleOne();
     await recordDelivery(sql, digestId, "email", { status: "sent" });
     expect(await digestsAwaitingDelivery(sql, "webhook")).toEqual([
-      { digestId, email: "operator@example.com" },
+      { digestId, email: "operator@example.com", unsubscribeToken: expect.any(String) },
     ]);
   });
 });

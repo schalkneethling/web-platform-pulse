@@ -59,7 +59,7 @@ export const SignupForm = () => {
             required
             autoComplete="email"
           />
-          <button className="signup__button" type="submit" disabled={state === "submitting"}>
+          <button className="button" type="submit" disabled={state === "submitting"}>
             Subscribe
           </button>
         </div>

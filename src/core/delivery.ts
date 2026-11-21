@@ -3,6 +3,8 @@ import type { DigestView } from "./digest.ts";
 /** The slice of a subscriber a channel needs to address them. */
 export interface Recipient {
   email: string;
+  /** Keys the unsubscribe link every message must carry. */
+  unsubscribeToken: string;
 }
 
 export type DeliveryResult = { status: "sent" } | { status: "failed"; error: string };

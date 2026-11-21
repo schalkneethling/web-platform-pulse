@@ -13,7 +13,7 @@
 //
 // With no subcommand the run is the pipeline, followed by any pending signup
 // confirmations. Sending mail needs PULSE_SMTP_URL and PULSE_PUBLIC_URL (the
-// reader's origin, which the confirmation link is built on).
+// reader's origin, which the confirmation and unsubscribe links are built on).
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
@@ -124,7 +124,6 @@ const subscriberEmail =
 const smtpUrl = values.smtp ?? process.env.PULSE_SMTP_URL;
 const emailFrom = process.env.PULSE_EMAIL_FROM ?? "Platform Pulse <pulse@localhost>";
 const send = smtpUrl ? createSmtpSender(smtpUrl) : null;
-const channels = send ? [createEmailChannel({ from: emailFrom, send })] : [];
 
 const [subcommand, ...extra] = positionals;
 if (subcommand !== undefined && (subcommand !== "confirmations" || extra.length > 0)) {
@@ -135,12 +134,12 @@ if (subcommand !== undefined && (subcommand !== "confirmations" || extra.length 
 }
 const confirmationsOnly = subcommand === "confirmations";
 
-// A confirmation link is built on the reader's public origin. Failing here,
+// Confirmation and unsubscribe links are built on the reader's public origin. Failing here,
 // before any mail is sent, beats mailing a link that points nowhere.
 const publicUrl = process.env.PULSE_PUBLIC_URL;
 if (send && !publicUrl) {
   console.error(
-    "PULSE_PUBLIC_URL is required when SMTP is configured: it is the base of the confirmation link.",
+    "PULSE_PUBLIC_URL is required when SMTP is configured: it is the base of the confirmation and unsubscribe links.",
   );
   process.exit(2);
 }
@@ -148,6 +147,9 @@ if (confirmationsOnly && !send) {
   console.error("confirmations needs SMTP: set PULSE_SMTP_URL or pass --smtp.");
   process.exit(2);
 }
+
+const channels =
+  send && publicUrl ? [createEmailChannel({ from: emailFrom, send, publicUrl })] : [];
 
 const sql = connect();
 try {
