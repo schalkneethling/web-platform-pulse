@@ -76,6 +76,59 @@ describe("anon reads", () => {
   });
 });
 
+describe("anon sees only the operator's digest", () => {
+  // Migration 7: the policy keys on subscriber.is_operator through a security
+  // definer helper, because anon can neither read subscriber nor, per the
+  // column grant, select digest.subscriber_id.
+  it("reads the operator's digest and items but not another subscriber's", async () => {
+    await requestSubscription(sql, "alice@example.com");
+    const [alice] = await sql<{ id: string; confirm_token: string }[]>`
+      select id, confirm_token from subscriber where email = 'alice@example.com'
+    `;
+    await confirmSubscription(sql, alice!.confirm_token);
+    const [operatorDigest] = await sql<{ id: string }[]>`
+      select id from digest where subscriber_id = (select id from subscriber where is_operator)
+    `;
+    const [aliceDigest] = await sql<{ id: string }[]>`
+      insert into digest (subscriber_id, cadence, window_start, window_end)
+      values (${alice!.id}, 'daily', now() - interval '1 day', now() + interval '1 day')
+      returning id
+    `;
+    const [event] = await sql<{ id: string }[]>`select id from change_event limit 1`;
+    await sql`
+      insert into digest_item (digest_id, event_id, position)
+      values (${aliceDigest!.id}, ${event!.id}, 0)
+    `;
+    expect(await sql`select count(*)::int as n from digest`).toMatchObject([{ n: 2 }]);
+    expect(await sql`select count(*)::int as n from digest_item`).toMatchObject([{ n: 2 }]);
+
+    expect(await asAnon((tx) => tx`select id from digest`)).toEqual([{ id: operatorDigest!.id }]);
+    expect(await asAnon((tx) => tx`select digest_id from digest_item`)).toEqual([
+      { digest_id: operatorDigest!.id },
+    ]);
+    // Public facts stay readable whoever's digest points at them.
+    expect(await asAnon((tx) => tx`select id from change_event`)).toHaveLength(1);
+    expect(await asAnon((tx) => tx`select url from event_source`)).toHaveLength(1);
+    await expect(asAnon((tx) => tx.unsafe("select * from subscriber"))).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("can execute the helper, which answers only for the operator's id", async () => {
+    const [{ id: operatorId }] = await sql<
+      { id: string }[]
+    >`select id from subscriber where is_operator`;
+    await requestSubscription(sql, "alice@example.com");
+    const [{ id: aliceId }] = await sql<{ id: string }[]>`
+      select id from subscriber where email = 'alice@example.com'
+    `;
+    const answer = (id: string) =>
+      asAnon(async (tx) => (await tx`select is_operator_subscriber(${id}::uuid) as ok`)[0]!.ok);
+    expect(await answer(operatorId)).toBe(true);
+    expect(await answer(aliceId)).toBe(false);
+  });
+});
+
 describe("anon is denied", () => {
   // The whole point of the slice: the anon key is public, so a subscriber's
   // address and their confirm/unsubscribe tokens must be unreachable.
@@ -199,11 +252,11 @@ describe("the policy layer itself", () => {
     ).toMatchObject([{ ok: false }]);
   });
 
-  it("leaves the three subscriber functions as the only public ones anon can execute", async () => {
+  it("leaves four functions as the only public ones anon can execute", async () => {
     // Migration 4 withdrew EXECUTE from PUBLIC; migrations 5 and 6 grant it
-    // back to anon for these three, so signup, confirm and unsubscribe can be
-    // reached from the browser. Any other name appearing here is a function
-    // that became anon-callable by accident.
+    // back to anon for signup, confirm and unsubscribe, and migration 7 for
+    // the helper the digest policies call. Any other name appearing here is a
+    // function that became anon-callable by accident.
     const executable = await sql<{ proname: string }[]>`
       select p.proname from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
@@ -212,6 +265,7 @@ describe("the policy layer itself", () => {
     `;
     expect(executable).toEqual([
       { proname: "confirm_subscription" },
+      { proname: "is_operator_subscriber" },
       { proname: "request_subscription" },
       { proname: "unsubscribe" },
     ]);

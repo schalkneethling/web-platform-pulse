@@ -140,25 +140,41 @@ export const saveSourceState = async (
 };
 
 /**
- * The operator is always confirmed — it's seeded from a trusted env var,
- * not the public signup form, so it skips the double opt-in other
- * subscribers go through (§17).
+ * Establishes the operator: exactly one subscriber is the operator, identified
+ * by `is_operator` (migration 7), not by being the first row. The public
+ * reader shows only that subscriber's digest.
+ *
+ * It sets the flag on every run, so a database that predates the column heals
+ * itself. If another row holds the flag (the configured address changed), the
+ * flag moves in the same transaction: cleared there first, because the
+ * partial unique index allows only one true row at any moment. The old
+ * operator stays an ordinary subscriber. The address matches case-insensitively,
+ * like migration 5's `lower(email)` index, so a case variant is the same row.
+ *
+ * The operator is always confirmed: it is seeded from a trusted env var, not
+ * the public signup form, so it skips the double opt-in other subscribers go
+ * through (§17). It never clears `unsubscribed_at`.
  */
-export const ensureOperator = async (sql: Sql, email: string): Promise<string> => {
-  const rows = await sql<{ id: string }[]>`
-    insert into subscriber (email, confirmed_at) values (${email}, now())
-    on conflict (email) do update
-      set email = excluded.email, confirmed_at = coalesce(subscriber.confirmed_at, now())
-    returning id
-  `;
-  const subscriberId = rows[0]!.id;
-  await sql`
-    insert into subscription (subscriber_id)
-    select ${subscriberId}
-    where not exists (select 1 from subscription where subscriber_id = ${subscriberId})
-  `;
-  return subscriberId;
-};
+export const ensureOperator = async (sql: Sql, email: string): Promise<string> =>
+  (await sql.begin(async (tx) => {
+    await tx`
+      update subscriber set is_operator = false
+      where is_operator and lower(email) <> lower(${email})
+    `;
+    const rows = await tx<{ id: string }[]>`
+      insert into subscriber (email, confirmed_at, is_operator) values (${email}, now(), true)
+      on conflict (lower(email)) do update
+        set is_operator = true, confirmed_at = coalesce(subscriber.confirmed_at, now())
+      returning id
+    `;
+    const subscriberId = rows[0]!.id;
+    await tx`
+      insert into subscription (subscriber_id)
+      select ${subscriberId}
+      where not exists (select 1 from subscription where subscriber_id = ${subscriberId})
+    `;
+    return subscriberId;
+  })) as string;
 
 /**
  * Subscribers a pipeline run assembles digests for: confirmed and not

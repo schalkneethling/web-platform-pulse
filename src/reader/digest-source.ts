@@ -3,12 +3,14 @@
 // the server -- one nested select standing in for getLatestDigest's query
 // plus its per-event provenance follow-up.
 //
-// The anon role cannot read `subscriber` (see migration 4), so the reader
-// cannot resolve an operator the way the server seam did -- it asks for the
-// most recent digest of any subscriber. While the deployment is
-// single-tenant that is the operator's digest by construction. It stops
-// being true the moment a second subscriber exists, which is why
-// per-subscriber identity has to land before the reader is shared (#65).
+// The reader asks for the most recent digest it can see, and the database
+// decides what that is: migration 7 lets anon read only the operator's
+// digests (subscriber.is_operator), so "the most recent" is always the
+// operator's unfiltered public edition, whoever else has had a digest cut
+// since. The query names no subscriber because anon cannot read `subscriber`
+// and has no column grant on digest.subscriber_id. Other subscribers receive
+// their filtered digest by email and have no reader view; that would need
+// real authentication, which is deferred to Slice G.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DigestView } from "../core/digest.ts";
 import type { ChangeEvent, ChangeEventType, Provenance, Subject } from "../core/types.ts";
@@ -116,10 +118,11 @@ const toEvent = (row: ChangeEventRow): ChangeEvent => ({
  * store.ts explicitly: items by digest_item.position, provenance by
  * (observed_at, url) under C collation.
  *
- * The null-embed guard is defensive rather than reachable: today's policies
- * let anon read every change_event a digest_item points at, so the embed is
- * never null. It would start being null the moment a policy gains a
- * predicate (#65), and a hole in the list is a poor way to find that out. */
+ * The null-embed guard is defensive rather than reachable: anon may read every
+ * change_event, and a digest_item is visible only when its digest is, so a
+ * visible item's event embed is never null. It would become null if the
+ * change_event policy ever gained a predicate, and a hole in the list is a
+ * poor way to find that out. */
 export const toDigestView = (row: DigestRow): DigestView => ({
   id: row.id,
   cadence: row.cadence,
