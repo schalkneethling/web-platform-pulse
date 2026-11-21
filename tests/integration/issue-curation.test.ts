@@ -213,6 +213,45 @@ describe("annotateItem", () => {
     expect((await itemFor(issueId, eventId))?.note).toBeNull();
   });
 
+  it("leaves the note alone when the section changes alone, and the section alone when the note does", async () => {
+    const eventId = await seedEvent("a", daysAgo(1));
+    const issueId = await openEmptyDraft();
+    await includeEvent(sql, issueId, eventId);
+    await annotateItem(sql, issueId, eventId, "Why this matters", "lead");
+
+    // A page that is out of date sends only what the operator touched.
+    await annotateItem(sql, issueId, eventId, null, "voices");
+    expect(await itemFor(issueId, eventId)).toMatchObject({
+      note: "Why this matters",
+      section: "voices",
+    });
+
+    await annotateItem(sql, issueId, eventId, "A better sentence", null);
+    expect(await itemFor(issueId, eventId)).toMatchObject({
+      note: "A better sentence",
+      section: "voices",
+    });
+
+    await annotateItem(sql, issueId, eventId, null, null);
+    expect(await itemFor(issueId, eventId)).toMatchObject({
+      note: "A better sentence",
+      section: "voices",
+    });
+  });
+
+  it("clears a note only when it is given an empty string, not when it is given nothing", async () => {
+    const eventId = await seedEvent("a", daysAgo(1));
+    const issueId = await openEmptyDraft();
+    await includeEvent(sql, issueId, eventId);
+    await annotateItem(sql, issueId, eventId, "Keep me", "watch");
+
+    await annotateItem(sql, issueId, eventId, null, "lead");
+    expect((await itemFor(issueId, eventId))?.note).toBe("Keep me");
+
+    await annotateItem(sql, issueId, eventId, "", null);
+    expect(await itemFor(issueId, eventId)).toMatchObject({ note: null, section: "lead" });
+  });
+
   it("accepts every section in SECTION_ORDER and rejects an unknown one", async () => {
     const eventId = await seedEvent("a", daysAgo(1));
     const issueId = await openEmptyDraft();
@@ -263,6 +302,40 @@ describe("setHeading", () => {
       title: "Container queries land",
       intro: "Intro.\n\nSecond paragraph.",
     });
+  });
+
+  it("leaves the intro alone when the title changes alone, and the title alone when the intro does", async () => {
+    const issueId = await openEmptyDraft();
+    await setHeading(sql, issueId, "First title", "First intro");
+
+    await setHeading(sql, issueId, "Second title", null);
+    expect(await getDraftIssue(sql)).toMatchObject({
+      title: "Second title",
+      intro: "First intro",
+    });
+
+    await setHeading(sql, issueId, null, "Second intro");
+    expect(await getDraftIssue(sql)).toMatchObject({
+      title: "Second title",
+      intro: "Second intro",
+    });
+
+    await setHeading(sql, issueId, null, null);
+    expect(await getDraftIssue(sql)).toMatchObject({
+      title: "Second title",
+      intro: "Second intro",
+    });
+  });
+
+  it("clears the title or the intro only when given an empty string", async () => {
+    const issueId = await openEmptyDraft();
+    await setHeading(sql, issueId, "Title", "Intro");
+
+    await setHeading(sql, issueId, "", null);
+    expect(await getDraftIssue(sql)).toMatchObject({ title: "", intro: "Intro" });
+
+    await setHeading(sql, issueId, null, "  ");
+    expect(await getDraftIssue(sql)).toMatchObject({ title: "", intro: "" });
   });
 
   it("enforces the caps of 200 and 4000 characters", async () => {

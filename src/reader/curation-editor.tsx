@@ -16,7 +16,7 @@ const INTRO_MAX_LENGTH = 4000;
 const formatDate = (iso: string): string =>
   new Date(iso).toLocaleDateString("en-GB", { dateStyle: "long" });
 
-/** The title and the intro. They save together on blur because the database function takes both. */
+/** The title and the intro. Each saves on blur, and only the one whose text changed is sent. */
 const Heading = ({ draft }: { draft: CurationDraft }) => {
   const [title, setTitle] = useState(draft.title);
   const [intro, setIntro] = useState(draft.intro);
@@ -26,16 +26,22 @@ const Heading = ({ draft }: { draft: CurationDraft }) => {
 
   const saveText = () =>
     save(() => {
-      const next = { title: wanted.current.title.trim(), intro: wanted.current.intro.trim() };
-      if (next.title === saved.current.title && next.intro === saved.current.intro) return null;
+      const title = wanted.current.title.trim();
+      const intro = wanted.current.intro.trim();
+      const titleChanged = title !== saved.current.title;
+      const introChanged = intro !== saved.current.intro;
+      if (!titleChanged && !introChanged) return null;
       return async () => {
-        const result = await saveHeading(
-          getCuratorClient(),
-          draft.id,
-          wanted.current.title,
-          wanted.current.intro,
-        );
-        if (result.ok) saved.current = next;
+        // Only the field that changed is sent: the database leaves the other
+        // as it is, so a page that is out of date cannot overwrite it.
+        const result = await saveHeading(getCuratorClient(), draft.id, {
+          ...(titleChanged ? { title: wanted.current.title } : {}),
+          ...(introChanged ? { intro: wanted.current.intro } : {}),
+        });
+        if (result.ok) {
+          if (titleChanged) saved.current.title = title;
+          if (introChanged) saved.current.intro = intro;
+        }
         return result;
       };
     });

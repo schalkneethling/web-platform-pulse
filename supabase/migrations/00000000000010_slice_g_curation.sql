@@ -260,14 +260,20 @@ begin
 end;
 $$;
 
--- Sets an item's note and section. `btrim` strips only the characters it is
--- given and defaults to spaces, so the trim set names tab and line breaks too:
--- an operator's note often ends in a newline. A blank note is stored as null so
--- "un-annotated" has one representation in the database. The length cap is
--- the check constraint on issue_item.note and the section vocabulary is the
--- one on issue_item.section; both raise on a bad value, so this function does
--- not repeat them. An item that has no row cannot be annotated, because
--- including it is a separate decision.
+-- Sets an item's note and section. A null argument means "leave this field as
+-- it is", and only null does: an empty string clears the note. The page sends
+-- just the field the operator changed. If it sent both, a page that has been
+-- open since before another save would write back the stale value of the field
+-- it did not touch, and the other save would be lost without a word.
+--
+-- `btrim` strips only the characters it is given and defaults to spaces, so the
+-- trim set names tab and line breaks too: an operator's note often ends in a
+-- newline. A blank note is stored as null so "un-annotated" has one
+-- representation in the database. The length cap is the check constraint on
+-- issue_item.note and the section vocabulary is the one on issue_item.section;
+-- both raise on a bad value, so this function does not repeat them. An item
+-- that has no row cannot be annotated, because including it is a separate
+-- decision.
 create function issue_annotate_item(
   target_issue uuid,
   target_event uuid,
@@ -283,7 +289,11 @@ begin
   perform public.issue_require_curator();
   perform public.issue_lock_draft(target_issue);
   update public.issue_item
-    set note = nullif(btrim(new_note, E' \t\r\n'), ''), section = new_section
+    set note = case
+          when new_note is null then note
+          else nullif(btrim(new_note, E' \t\r\n'), '')
+        end,
+        section = coalesce(new_section, section)
     where issue_id = target_issue and event_id = target_event;
   if not found then
     raise exception 'event % is not an item of this issue', target_event using errcode = 'P0002';
@@ -291,9 +301,10 @@ begin
 end;
 $$;
 
--- Sets the title and the intro. They are trimmed, and null is stored as the
--- empty string those columns default to. The caps (200 and 4000 characters)
--- are the check constraints from migration 9.
+-- Sets the title and the intro, trimmed. Null leaves a field as it is and an
+-- empty string clears it, for the same reason as above: the page sends only
+-- the field that changed. The caps (200 and 4000 characters) are the check
+-- constraints from migration 9.
 create function issue_set_heading(target_issue uuid, new_title text, new_intro text)
 returns void
 language plpgsql
@@ -304,7 +315,8 @@ begin
   perform public.issue_require_curator();
   perform public.issue_lock_draft(target_issue);
   update public.issue
-    set title = coalesce(btrim(new_title, E' \t\r\n'), ''), intro = coalesce(btrim(new_intro, E' \t\r\n'), '')
+    set title = case when new_title is null then title else btrim(new_title, E' \t\r\n') end,
+        intro = case when new_intro is null then intro else btrim(new_intro, E' \t\r\n') end
     where id = target_issue;
 end;
 $$;

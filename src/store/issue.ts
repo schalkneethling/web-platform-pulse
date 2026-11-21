@@ -346,23 +346,29 @@ export const excludeEvent = async (
   await sql`select public.issue_exclude_event(${issueId}::uuid, ${eventId}::uuid)`;
 };
 
+/**
+ * Sets an item's note and section. Either may be null, which leaves that field
+ * as it is: a caller that only changed the section does not have to resend a
+ * note it may be holding stale. An empty string clears the note.
+ */
 export const annotateItem = async (
   sql: Queryable,
   issueId: string,
   eventId: string,
   note: string | null,
-  section: Section,
+  section: Section | null,
 ): Promise<void> => {
   await sql`
     select public.issue_annotate_item(${issueId}::uuid, ${eventId}::uuid, ${note}::text, ${section}::text)
   `;
 };
 
+/** Sets the title and the intro. Null leaves a field as it is; an empty string clears it. */
 export const setHeading = async (
   sql: Queryable,
   issueId: string,
-  title: string,
-  intro: string,
+  title: string | null,
+  intro: string | null,
 ): Promise<void> => {
   await sql`select public.issue_set_heading(${issueId}::uuid, ${title}::text, ${intro}::text)`;
 };

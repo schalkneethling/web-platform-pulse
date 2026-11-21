@@ -81,23 +81,30 @@ export const CurationItem = ({ issueId, entry, onSaved }: CurationItemProps) => 
     });
   };
 
-  /** Writes the note and section together: the function takes both, and the
-   * one a person did not touch is whatever is on screen. */
+  /**
+   * Writes the note, the section, or both, but only the ones that differ from
+   * what is saved. The database function leaves a field it is not given as it
+   * is, so a page that was loaded before another save does not write back the
+   * stale value of the field the operator did not touch.
+   */
   const saveText = () =>
     save(() => {
       const { note: text, section: target } = wanted.current;
-      if (
-        !saved.current.hasRow ||
-        (text.trim() === saved.current.note && target === saved.current.section)
-      ) {
-        return null;
-      }
+      if (!saved.current.hasRow) return null;
+      const noteChanged = text.trim() !== saved.current.note;
+      const sectionChanged = target !== saved.current.section;
+      if (!noteChanged && !sectionChanged) return null;
       return async () => {
-        const result = await saveNote(getCuratorClient(), issueId, event.id, text, target);
+        const result = await saveNote(getCuratorClient(), issueId, event.id, {
+          ...(noteChanged ? { note: text } : {}),
+          ...(sectionChanged ? { section: target } : {}),
+        });
         if (result.ok) {
-          saved.current.note = text.trim();
-          saved.current.section = target;
-          setSavedNote(saved.current.note);
+          if (noteChanged) {
+            saved.current.note = text.trim();
+            setSavedNote(saved.current.note);
+          }
+          if (sectionChanged) saved.current.section = target;
           onSaved(event.id, { included: saved.current.included, note: saved.current.note });
         }
         return result;

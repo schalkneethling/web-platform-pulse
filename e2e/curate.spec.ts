@@ -285,6 +285,67 @@ test.describe("with a draft open", () => {
     await context.close();
   });
 
+  test("a save from a page that is out of date does not overwrite the other field of a pair", async ({
+    browser,
+  }) => {
+    const title = extraTitle(30);
+    const context = await browser.newContext();
+    await signInAs(context, OPERATOR_USER_ID);
+    const fresh = await context.newPage();
+    await fresh.goto("/curate");
+    await item(fresh, title).getByLabel("Include in the issue").check();
+    await expect(savedStatus(fresh, title)).toHaveText("Saved.");
+
+    // The second page loads now, so it holds an empty note, the section the
+    // include assigned, and an empty title and intro.
+    const stale = await context.newPage();
+    await stale.goto("/curate");
+    await expect(item(stale, title).getByLabel("Include in the issue")).toBeChecked();
+
+    const row = async () =>
+      (
+        await sql<{ note: string | null; section: string }[]>`
+          select i.note, i.section from issue_item i join change_event e on e.id = i.event_id
+          where e.title = ${title}
+        `
+      )[0]!;
+
+    // The fresh page writes a note. The stale page then changes only the
+    // section, and the note must survive.
+    await item(fresh, title).getByLabel("Note").fill("Written on the fresh page.");
+    await item(fresh, title).getByLabel("Note").blur();
+    await expect(savedStatus(fresh, title)).toHaveText("Saved.");
+    await item(stale, title).getByLabel("Section").selectOption("watch");
+    await expect(savedStatus(stale, title)).toHaveText("Saved.");
+    expect(await row()).toEqual({ note: "Written on the fresh page.", section: "watch" });
+
+    // And the other way round: the fresh page's section is out of date now.
+    await item(fresh, title).getByLabel("Note").fill("Rewritten on the fresh page.");
+    await item(fresh, title).getByLabel("Note").blur();
+    await expect(savedStatus(fresh, title)).toHaveText("Saved.");
+    expect(await row()).toEqual({ note: "Rewritten on the fresh page.", section: "watch" });
+
+    // The heading pair behaves the same way.
+    const heading = async () =>
+      (await sql<{ title: string; intro: string }[]>`select title, intro from issue`)[0]!;
+    await fresh.getByRole("textbox", { name: "Title", exact: true }).fill("Set on the fresh page");
+    await fresh.getByRole("textbox", { name: "Title", exact: true }).blur();
+    await expect(fresh.locator("#heading-status")).toHaveText("Saved.");
+    await stale.getByRole("textbox", { name: "Intro", exact: true }).fill("Set on the stale page.");
+    await stale.getByRole("textbox", { name: "Intro", exact: true }).blur();
+    await expect(stale.locator("#heading-status")).toHaveText("Saved.");
+    expect(await heading()).toEqual({
+      title: "Set on the fresh page",
+      intro: "Set on the stale page.",
+    });
+
+    await fresh.getByRole("textbox", { name: "Title", exact: true }).fill("Changed again");
+    await fresh.getByRole("textbox", { name: "Title", exact: true }).blur();
+    await expect(fresh.locator("#heading-status")).toHaveText("Saved.");
+    expect(await heading()).toEqual({ title: "Changed again", intro: "Set on the stale page." });
+    await context.close();
+  });
+
   test("the operator curates the issue, previews it, publishes it and sees the draft close", async ({
     browser,
   }) => {

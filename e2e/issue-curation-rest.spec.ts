@@ -78,6 +78,32 @@ test("the operator's token reads the draft and curates it through PostgREST", as
   ]);
 });
 
+test("a JSON null argument leaves that field as it is", async ({ request }) => {
+  const operator = headers(authenticatedToken(OPERATOR_USER_ID));
+
+  // The previous test left the note "Written through PostgREST" and the title
+  // "Over HTTP". Sending null for one of each pair is what the page does for
+  // the field it did not change.
+  const section = await request.post(`${REST_URL}/rpc/issue_annotate_item`, {
+    headers: operator,
+    data: { target_issue: issueId, target_event: eventId, new_note: null, new_section: "voices" },
+  });
+  expect(section.ok()).toBe(true);
+  const intro = await request.post(`${REST_URL}/rpc/issue_set_heading`, {
+    headers: operator,
+    data: { target_issue: issueId, new_title: null, new_intro: "An intro." },
+  });
+  expect(intro.ok()).toBe(true);
+
+  const items = await request.get(
+    `${REST_URL}/issue_item?select=note,section&event_id=eq.${eventId}`,
+    { headers: operator },
+  );
+  expect(await items.json()).toEqual([{ note: "Written through PostgREST", section: "voices" }]);
+  const issues = await request.get(`${REST_URL}/issue?select=title,intro`, { headers: operator });
+  expect(await issues.json()).toEqual([{ title: "Over HTTP", intro: "An intro." }]);
+});
+
 test("a signed-in user who is not the operator sees nothing and cannot write", async ({
   request,
 }) => {
