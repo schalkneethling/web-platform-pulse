@@ -292,8 +292,10 @@ describe("issue tables are closed to API roles", () => {
       { relname: "issue_delivery", relrowsecurity: true, readable: false },
       { relname: "issue_item", relrowsecurity: true, readable: false },
     ]);
+    // Migration 10 adds policies for `authenticated`; none may name anon.
     expect(
-      await sql`select count(*)::int as n from pg_policies where tablename like 'issue%'`,
+      await sql`select count(*)::int as n from pg_policies
+        where tablename like 'issue%' and roles @> array['anon']::name[]`,
     ).toMatchObject([{ n: 0 }]);
   });
 });

@@ -23,18 +23,33 @@ export const REST_URL = `http://localhost:${REST_PORT}`;
 
 const base64url = (input: Buffer | string): string => Buffer.from(input).toString("base64url");
 
-/** Mint the local equivalent of a Supabase anon key (HS256, `role: anon`). */
-export const anonKey = (): string => {
+const signToken = (claims: Record<string, unknown>): string => {
   const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const issuedAt = Math.floor(Date.now() / 1000);
   const payload = base64url(
-    JSON.stringify({ role: "anon", iss: "pulse-local", iat: issuedAt, exp: issuedAt + 3600 }),
+    JSON.stringify({ ...claims, iss: "pulse-local", iat: issuedAt, exp: issuedAt + 3600 }),
   );
   const signature = base64url(
     createHmac("sha256", JWT_SECRET).update(`${header}.${payload}`).digest(),
   );
   return `${header}.${payload}.${signature}`;
 };
+
+/** Mint the local equivalent of a Supabase anon key (HS256, `role: anon`). */
+export const anonKey = (): string => signToken({ role: "anon" });
+
+/**
+ * Mint the local equivalent of a signed-in user's access token. Supabase puts
+ * the sign-in providers in `app_metadata`, which only the auth server writes,
+ * so that is where the operator check reads them; `providers` defaults to the
+ * Google sign-in the operator uses in production.
+ */
+export const authenticatedToken = (email: string, providers: string[] = ["google"]): string =>
+  signToken({
+    role: "authenticated",
+    email,
+    app_metadata: { provider: providers[0], providers },
+  });
 
 const waitForReady = async (): Promise<void> => {
   const deadline = Date.now() + 30_000;
