@@ -10,7 +10,7 @@ export interface IngestResult {
   unchanged: number;
 }
 
-interface ChangeEventRow {
+export interface ChangeEventRow {
   id: string;
   type: ChangeEvent["type"];
   subject: Subject;
@@ -26,7 +26,7 @@ interface ChangeEventRow {
   correlation_key: string;
 }
 
-const rowToEvent = (row: ChangeEventRow, provenance: Provenance[]): ChangeEvent => ({
+export const rowToEvent = (row: ChangeEventRow, provenance: Provenance[]): ChangeEvent => ({
   id: row.id,
   type: row.type,
   subject: row.subject,
@@ -325,7 +325,7 @@ export const deleteStaleUnconfirmed = async (sql: Sql): Promise<number> => {
   return deleted.length;
 };
 
-const eventsWithProvenance = async (
+export const eventsWithProvenance = async (
   sql: Queryable,
   rows: ChangeEventRow[],
 ): Promise<ChangeEvent[]> => {
@@ -355,7 +355,7 @@ const eventsWithProvenance = async (
 };
 
 /** Cadence windows (§9): how long each digest window spans. */
-const CADENCE_PERIOD_MS: Record<string, number> = {
+export const CADENCE_PERIOD_MS: Record<string, number> = {
   daily: 24 * 60 * 60 * 1000,
   weekly: 7 * 24 * 60 * 60 * 1000,
 };
