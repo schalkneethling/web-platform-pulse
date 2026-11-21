@@ -104,6 +104,12 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: vp run build
 
+      # wrangler-action picks its package manager from the lockfile, finds
+      # bun.lock, and runs `bun` to install wrangler. setup-vp manages its own
+      # runtime and does not put bun on PATH, so without this step the action
+      # fails before it uploads anything.
+      - uses: oven-sh/setup-bun@v2
+
       - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
