@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { signInAs } from "./curate-session.ts";
 import { MAILPIT_API_URL, MAILPIT_SMTP_URL } from "../scripts/dev-mail.ts";
-import { runIssuePreview, runIssuePublish } from "../src/cli/issue.ts";
+import { runIssuePreview, runIssuePublish, runIssueRetry } from "../src/cli/issue.ts";
 import type { CandidateEvent } from "../src/core/types.ts";
 import { createSmtpSender } from "../src/delivery/smtp.ts";
 import { connect } from "../src/store/db.ts";
@@ -393,11 +393,11 @@ test.describe("with a draft open", () => {
     }
     expect(email.text).not.toContain("[Preview]");
 
-    // A second publish sends nothing.
+    // A retry sends nothing, because everyone already has the issue.
     const sentBefore = (await inbox()).length;
     const secondLines: string[] = [];
-    expect(await runIssuePublish(sql, publishDeps, (line) => secondLines.push(line))).toBe(true);
-    expect(secondLines.join("\n")).toContain("already published");
+    expect(await runIssueRetry(sql, publishDeps, (line) => secondLines.push(line))).toBe(true);
+    expect(secondLines.join("\n")).toContain("nothing is waiting to be sent");
     expect(await messagesTo(reader)).toHaveLength(1);
     expect((await inbox()).length).toBe(sentBefore);
 

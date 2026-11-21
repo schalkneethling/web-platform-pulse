@@ -27,9 +27,11 @@ export type Command =
   | { kind: "issue-open" }
   | { kind: "issue-preview" }
   | { kind: "issue-publish" }
+  | { kind: "issue-retry" }
   | { kind: "unknown"; message: string };
 
-const VALID_COMMANDS = '"confirmations", "issue open", "issue preview" and "issue publish"';
+const VALID_COMMANDS =
+  '"confirmations", "issue open", "issue preview", "issue publish" and "issue retry"';
 
 /**
  * Maps the positional arguments to a command without touching the environment,
@@ -48,6 +50,9 @@ export const resolveCommand = (positionals: string[]): Command => {
   }
   if (subcommand === "issue" && extra.length === 1 && extra[0] === "publish") {
     return { kind: "issue-publish" };
+  }
+  if (subcommand === "issue" && extra.length === 1 && extra[0] === "retry") {
+    return { kind: "issue-retry" };
   }
   return {
     kind: "unknown",

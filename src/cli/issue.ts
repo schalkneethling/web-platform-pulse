@@ -6,9 +6,11 @@ import { scrubCredentials } from "../delivery/scrub.ts";
 import type { Sql } from "../store/db.ts";
 import {
   getDraftIssue,
-  getLatestPublishedIssue,
+  getIssue,
+  listPublishedIssues,
   openIssue,
   publishDraft,
+  type PublishRequirement,
   recordIssueDelivery,
   subscribersAwaitingIssue,
 } from "../store/issue.ts";
@@ -70,6 +72,12 @@ export const resolvePublishConfig = (
   env: Record<string, string | undefined>,
 ): ConfigResult<MailConfig> => requireMail("issue publish", readSettings(values, env));
 
+/** `issue retry` sends the same mail `publish` does, so it needs the same settings. */
+export const resolveRetryConfig = (
+  values: Pick<CliValues, "smtp" | "email">,
+  env: Record<string, string | undefined>,
+): ConfigResult<MailConfig> => requireMail("issue retry", readSettings(values, env));
+
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 export interface PreviewDeps {
@@ -120,9 +128,17 @@ export interface PublishDeps {
 /** The only channel an issue goes out on; the column exists so a second one is additive. */
 const ISSUE_CHANNEL = "email";
 
+/** What one fan-out did, across every published issue it visited. */
+interface FanOutSummary {
+  /** True when every owed send that was attempted succeeded. */
+  ok: boolean;
+  /** Attempts made, so a run that found nothing owed can say so. */
+  attempted: number;
+}
+
 /**
- * `issue publish`: publish the open draft, then send the most recently
- * published issue to every subscriber who is still owed it.
+ * Sends every owed issue email, oldest published issue first, so a subscriber
+ * who missed an older issue receives it before its successors.
  *
  * Each recipient is handled in this order: send the email, then record the
  * outcome, the same order the daily digest uses. The unique index on sent rows
@@ -133,10 +149,77 @@ const ISSUE_CHANNEL = "email";
  * at-least-once window is deliberate: recording first would turn the same crash
  * into a subscriber who never receives the issue, which is the worse failure
  * for a newsletter.
+ */
+const sendOwedIssues = async (
+  sql: Sql,
+  deps: PublishDeps,
+  write: (line: string) => void,
+): Promise<FanOutSummary> => {
+  let ok = true;
+  let attempted = 0;
+  for (const { id, number } of await listPublishedIssues(sql)) {
+    const pending = await subscribersAwaitingIssue(sql, id, ISSUE_CHANNEL);
+    if (pending.length === 0) continue;
+    // Loaded only for an issue somebody is owed: most published issues are
+    // long since delivered and need no rendering.
+    const issue = (await getIssue(sql, id))!;
+
+    let sent = 0;
+    let failed = 0;
+    for (const recipient of pending) {
+      const link = unsubscribeUrl(deps.publicUrl, recipient.unsubscribeToken);
+      try {
+        await deps.send({
+          ...renderIssueEmail(issue, issue.items, { unsubscribeLink: link, preview: false }),
+          from: deps.from,
+          to: recipient.email,
+          headers: { "List-Unsubscribe": `<${link}>` },
+        });
+      } catch (error) {
+        // The address is deliberately not logged: CI logs are shared.
+        const message = scrubCredentials(error instanceof Error ? error.message : String(error));
+        await recordIssueDelivery(sql, id, recipient.subscriberId, ISSUE_CHANNEL, {
+          status: "failed",
+          error: message,
+        });
+        console.error(
+          `issue #${number} to subscriber ${recipient.subscriberId} failed: ${message}`,
+        );
+        failed += 1;
+        continue;
+      }
+      await recordIssueDelivery(sql, id, recipient.subscriberId, ISSUE_CHANNEL, {
+        status: "sent",
+      });
+      sent += 1;
+    }
+    write(`issue #${number}: ${sent} sent, ${failed} failed`);
+    attempted += sent + failed;
+    if (failed > 0) ok = false;
+  }
+  if (attempted === 0) write("nothing is waiting to be sent");
+  return { ok, attempted };
+};
+
+const requirementText: Record<PublishRequirement, string> = {
+  title: "a title",
+  content: "at least one included item or an intro",
+};
+
+/**
+ * `issue publish`: publish the open draft, then send every owed email for
+ * every published issue, the new one included.
  *
- * Re-running is therefore safe: with nothing new to publish it retries only
- * failed sends. Returns false when the draft was refused or any send failed,
- * which the dispatcher turns into exit code 1.
+ * A draft is required. Publishing only ever acts on a draft the operator
+ * decided to send: the weekly schedule opens next week's pre-filled draft
+ * before anyone has written it, so a `publish` that quietly published whatever
+ * draft existed would send an unreviewed issue to everyone. A draft with no
+ * title is refused for the same reason (the pre-filled draft has none), and so
+ * is one with no included item and no intro. With no draft, use `issue retry`
+ * to resend failed emails.
+ *
+ * Returns false when there was no draft, the draft was refused or any send
+ * failed, which the dispatcher turns into exit code 1.
  */
 export const runIssuePublish = async (
   sql: Sql,
@@ -144,59 +227,45 @@ export const runIssuePublish = async (
   write: (line: string) => void = console.log,
 ): Promise<boolean> => {
   const publication = await publishDraft(sql);
-  if (publication.outcome === "refused") {
+  if (publication.outcome === "no-draft") {
     write(
-      `issue #${publication.number} was not published: it has no included item and no intro. ` +
-        "Add an intro or an item first.",
+      "There is no draft issue to publish. Use `issue retry` to resend failed emails of " +
+        "published issues, or `issue open` to cut a draft.",
     );
     return false;
   }
-  if (publication.outcome === "published") write(`issue #${publication.number} published`);
-
-  const issue = await getLatestPublishedIssue(sql);
-  if (!issue) {
-    write("There is no issue to publish and nothing to retry. Run `issue open` first.");
-    return true;
+  if (publication.outcome === "refused") {
+    write(
+      `issue #${publication.number} was not published: it needs ` +
+        `${publication.missing.map((need) => requirementText[need]).join(" and ")}. ` +
+        "Edit it at /curate first.",
+    );
+    return false;
   }
-  if (isUnannotated(issue.items)) {
+
+  write(`issue #${publication.number} published`);
+  const published = (await getIssue(sql, publication.id))!;
+  if (isUnannotated(published.items)) {
     write("warning: no included item has a note, so this issue reads as a changelog");
   }
+  return (await sendOwedIssues(sql, deps, write)).ok;
+};
 
-  const pending = await subscribersAwaitingIssue(sql, issue.id, ISSUE_CHANNEL);
-  if (pending.length === 0 && publication.outcome === "no-draft") {
-    write(`issue #${issue.number} is already published and nothing is waiting to be sent`);
+/**
+ * `issue retry`: send every owed email for every published issue, oldest
+ * first, and publish nothing. This is the command for a failed send, whether
+ * it failed in the last run or an issue ago; it never touches a draft, so it
+ * is safe to run while next week's draft is open. Returns false when any send
+ * failed.
+ */
+export const runIssueRetry = async (
+  sql: Sql,
+  deps: PublishDeps,
+  write: (line: string) => void = console.log,
+): Promise<boolean> => {
+  if ((await listPublishedIssues(sql)).length === 0) {
+    write("There is no published issue, so there is nothing to retry.");
     return true;
   }
-
-  let sent = 0;
-  let failed = 0;
-  for (const recipient of pending) {
-    const link = unsubscribeUrl(deps.publicUrl, recipient.unsubscribeToken);
-    try {
-      await deps.send({
-        ...renderIssueEmail(issue, issue.items, { unsubscribeLink: link, preview: false }),
-        from: deps.from,
-        to: recipient.email,
-        headers: { "List-Unsubscribe": `<${link}>` },
-      });
-    } catch (error) {
-      // The address is deliberately not logged: CI logs are shared.
-      const message = scrubCredentials(error instanceof Error ? error.message : String(error));
-      await recordIssueDelivery(sql, issue.id, recipient.subscriberId, ISSUE_CHANNEL, {
-        status: "failed",
-        error: message,
-      });
-      console.error(
-        `issue #${issue.number} to subscriber ${recipient.subscriberId} failed: ${message}`,
-      );
-      failed += 1;
-      continue;
-    }
-    await recordIssueDelivery(sql, issue.id, recipient.subscriberId, ISSUE_CHANNEL, {
-      status: "sent",
-    });
-    sent += 1;
-  }
-  write(`issue #${issue.number}: ${sent} sent, ${failed} failed`);
-  return failed === 0;
+  return (await sendOwedIssues(sql, deps, write)).ok;
 };

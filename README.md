@@ -147,20 +147,33 @@ issue open     Sunday 06:00 UTC (issue.yml) or by hand: a draft, pre-filled with
 issue preview  the draft mailed to the operator, subject marked [Preview]
      │
 issue publish  status becomes published, every confirmed subscriber is mailed once
+     │
+issue retry    any send that failed is sent again, for every published issue
 ```
 
-The three commands are `vp run pulse issue open`, `issue preview` and
-`issue publish`. `open` needs only the database; if a draft already exists it
-changes nothing. `preview` needs `PULSE_SMTP_URL`, `PULSE_PUBLIC_URL` and the
-operator's address (`PULSE_SUBSCRIBER_EMAIL` or `--email`), and writes nothing.
-`publish` needs the first two, refuses a draft with no included item and no
-intro, and is safe to run again: it sends nothing twice and retries only the
-sends that failed. A run that has a failed send exits 1.
+The four commands are `vp run pulse issue open`, `issue preview`,
+`issue publish` and `issue retry`. `open` needs only the database; if a draft
+already exists it changes nothing. `preview` needs `PULSE_SMTP_URL`,
+`PULSE_PUBLIC_URL` and the operator's address (`PULSE_SUBSCRIBER_EMAIL` or
+`--email`), and writes nothing.
+
+`publish` needs the first two settings and a draft. It refuses, and leaves the
+draft a draft, unless the draft has a title and at least one included item or an
+intro. `issue open` pre-fills a draft with a blank title, so a draft nobody has
+edited can never be published by mistake. With no draft it exits 1 and points at
+`issue retry`. After publishing it sends every email still owed for every
+published issue, oldest issue first.
+
+`retry` needs the same settings and publishes nothing, so it is safe to run
+while next week's draft is open. It sends the emails that failed, for the newest
+issue or an older one. Neither command sends anything twice: a subscriber with a
+`sent` row is never selected again, and a subscriber is retried until five sends
+have failed. A run that has a failed send exits 1.
 
 `.github/workflows/issue.yml` runs `open` every Sunday at 06:00 UTC, which sends
-no mail, and lets you run `open`, `preview` or `publish` from the Actions tab.
-Publishing is never scheduled, because the issue is worth what the operator
-writes on each item.
+no mail, and lets you run `open`, `preview`, `publish` or `retry` from the
+Actions tab. Publishing is never scheduled, because the issue is worth what the
+operator writes on each item.
 
 ### Curating at `/curate`
 

@@ -11,12 +11,14 @@ describe("resolveCommand", () => {
     expect(resolveCommand(["issue", "open"])).toEqual({ kind: "issue-open" });
     expect(resolveCommand(["issue", "preview"])).toEqual({ kind: "issue-preview" });
     expect(resolveCommand(["issue", "publish"])).toEqual({ kind: "issue-publish" });
+    expect(resolveCommand(["issue", "retry"])).toEqual({ kind: "issue-retry" });
   });
 
   it.each([
     [["issue"]],
     [["issue", "preview", "extra"]],
     [["issue", "publish", "extra"]],
+    [["issue", "retry", "extra"]],
     [["issue", "send"]],
     [["issue", "open", "extra"]],
     [["confirmations", "extra"]],
@@ -29,6 +31,7 @@ describe("resolveCommand", () => {
       expect(command.message).toContain("issue open");
       expect(command.message).toContain("issue preview");
       expect(command.message).toContain("issue publish");
+      expect(command.message).toContain("issue retry");
       expect(command.message).toContain("confirmations");
     }
   });

@@ -84,13 +84,14 @@ itself.
 
 A new pair of tables, `issue` and `issue_item`, sits beside `digest` instead
 of replacing it, and `change_event` is never written by any of it, so a
-pipeline re-run cannot disturb a draft. Three commands run the week:
+pipeline re-run cannot disturb a draft. Four commands run the week:
 `vp run pulse issue open` cuts the draft for the elapsed week (or reports the
 open one) and pre-fills it with the top twelve events; `issue preview` mails
 the draft, marked as a preview, to the operator; `issue publish` flips the
-status and mails every confirmed subscriber once, retrying only the sends that
-failed. `.github/workflows/issue.yml` runs `open` every Sunday at 06:00 UTC
-and offers all three by hand. Curation happens at `/curate` in the reader: the
+status and mails every confirmed subscriber once (it refuses a draft with no
+title); `issue retry` resends the emails that failed, for any published issue,
+and publishes nothing. `.github/workflows/issue.yml` runs `open` every Sunday
+at 06:00 UTC and offers all four by hand. Curation happens at `/curate` in the reader: the
 operator signs in with Google (Supabase Auth), and the database decides who
 that is (`is_operator_request()`, migration 10), so the page holds no access
 rule of its own. An issue with no note on any included item is flagged on the
@@ -111,10 +112,6 @@ What Slice G deliberately leaves out:
   the operator's curation tables, so a subscriber who signs in sees nothing.
   Both still need `auth.uid()` predicates and a mapping from an auth user to a
   `subscriber` row.
-- **Retrying an older issue's failed sends once a newer issue is published.**
-  `publish` fans out only the most recently published issue, so a subscriber
-  whose send failed five times, or failed while a newer issue went out first,
-  does not receive the older one later.
 - **Exactly-once delivery when a run dies mid-send.** Each email is sent
   before its `issue_delivery` row is written, so a crash between the provider
   accepting a message and the row being written mails that subscriber again on

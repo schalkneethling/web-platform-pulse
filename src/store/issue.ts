@@ -147,38 +147,77 @@ export const getDraftIssue = async (sql: Sql): Promise<IssueView | null> => {
 /**
  * Publishes the open draft with one statement guarded by `status = 'draft'`, so
  * two concurrent publishes cannot both flip it and `published_at` is stamped
- * once. An issue with no included item and a blank intro has nothing to send,
- * so it is refused and stays a draft. The three outcomes are told apart with a
- * read after the update, which is safe because a draft only ever leaves that
- * state through this function.
+ * once.
+ *
+ * The same statement refuses a draft that is not ready to send: it needs a
+ * title, and at least one included item or an intro. The title rule is what
+ * stops an untouched draft from going out. `issue open` pre-fills a draft with
+ * a blank title, so a draft nobody has edited can never be published by
+ * mistake, however it was reached. The rule lives in the `where` clause, not in
+ * the caller, so no other code path can publish around it.
+ *
+ * The three outcomes are told apart with a read after the update, which is safe
+ * because a draft only ever leaves that state through this function.
  */
 export type PublishResult =
-  | { outcome: "published"; number: number }
-  | { outcome: "refused"; number: number }
+  | { outcome: "published"; id: string; number: number }
+  | { outcome: "refused"; number: number; missing: PublishRequirement[] }
   | { outcome: "no-draft" };
 
+/** What a refused draft still needs: the two halves of the publish guard. */
+export type PublishRequirement = "title" | "content";
+
 export const publishDraft = async (sql: Sql): Promise<PublishResult> => {
-  const published = await sql<{ number: number }[]>`
+  const published = await sql<{ id: string; number: number }[]>`
     update issue set status = 'published', published_at = now()
     where status = 'draft'
+      and btrim(title) <> ''
       and (
         btrim(intro) <> ''
         or exists (
           select 1 from issue_item where issue_item.issue_id = issue.id and issue_item.included
         )
       )
-    returning number
+    returning id, number
   `;
-  if (published[0]) return { outcome: "published", number: published[0].number };
-  const drafts = await sql<{ number: number }[]>`select number from issue where status = 'draft'`;
-  return drafts[0] ? { outcome: "refused", number: drafts[0].number } : { outcome: "no-draft" };
+  if (published[0]) {
+    return { outcome: "published", id: published[0].id, number: published[0].number };
+  }
+  const drafts = await sql<{ number: number; no_title: boolean; no_content: boolean }[]>`
+    select number,
+      btrim(title) = '' as no_title,
+      btrim(intro) = '' and not exists (
+        select 1 from issue_item where issue_item.issue_id = issue.id and issue_item.included
+      ) as no_content
+    from issue where status = 'draft'
+  `;
+  const draft = drafts[0];
+  if (!draft) return { outcome: "no-draft" };
+  return {
+    outcome: "refused",
+    number: draft.number,
+    missing: [
+      ...(draft.no_title ? (["title"] as const) : []),
+      ...(draft.no_content ? (["content"] as const) : []),
+    ],
+  };
 };
 
-/** The most recently published issue with its items, or null before the first publication. */
-export const getLatestPublishedIssue = async (sql: Sql): Promise<IssueView | null> => {
+/** A published issue's identity, enough to decide whether anyone is owed it. */
+export interface PublishedIssueRef {
+  id: string;
+  number: number;
+}
+
+/** Every published issue, oldest first, so a backlog is sent in the order it was written. */
+export const listPublishedIssues = async (sql: Sql): Promise<PublishedIssueRef[]> =>
+  sql<PublishedIssueRef[]>`select id, number from issue where status = 'published' order by number`;
+
+/** One issue with its items, whatever its status, or null when it does not exist. */
+export const getIssue = async (sql: Sql, id: string): Promise<IssueView | null> => {
   const issues = await sql<IssueRow[]>`
     select id, number, title, intro, status, window_start, window_end
-    from issue where status = 'published' order by number desc limit 1
+    from issue where id = ${id}
   `;
   return issues[0] ? issueView(sql, issues[0]) : null;
 };
