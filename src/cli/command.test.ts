@@ -9,11 +9,12 @@ describe("resolveCommand", () => {
   it("resolves confirmations and issue open", () => {
     expect(resolveCommand(["confirmations"])).toEqual({ kind: "confirmations" });
     expect(resolveCommand(["issue", "open"])).toEqual({ kind: "issue-open" });
+    expect(resolveCommand(["issue", "preview"])).toEqual({ kind: "issue-preview" });
   });
 
   it.each([
     [["issue"]],
-    [["issue", "preview"]],
+    [["issue", "preview", "extra"]],
     [["issue", "publish"]],
     [["issue", "open", "extra"]],
     [["confirmations", "extra"]],
@@ -24,6 +25,7 @@ describe("resolveCommand", () => {
     if (command.kind === "unknown") {
       expect(command.message).toContain(positionals.join(" "));
       expect(command.message).toContain("issue open");
+      expect(command.message).toContain("issue preview");
       expect(command.message).toContain("confirmations");
     }
   });

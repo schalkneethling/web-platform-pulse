@@ -16,13 +16,17 @@
 //   vp run pulse confirmations   only send pending signup confirmations, then exit
 //   vp run pulse issue open      cut the weekly issue's draft (or show the open one);
 //       needs only the database, so no SMTP or operator address is read
+//   vp run pulse issue preview   mail the open draft, marked as a preview, to the operator
+//       (PULSE_SUBSCRIBER_EMAIL or --email); needs PULSE_SMTP_URL (or --smtp) and
+//       PULSE_PUBLIC_URL, exits 1 when no draft is open, and writes nothing
 //
 // With no subcommand the run is the pipeline, followed by any pending signup
 // confirmations. Sending mail needs PULSE_SMTP_URL and PULSE_PUBLIC_URL (the
 // reader's origin, which the confirmation and unsubscribe links are built on).
 import { connect } from "../store/db.ts";
 import { parseCli, resolveCommand } from "./command.ts";
-import { runIssueOpen } from "./issue.ts";
+import { createSmtpSender } from "../delivery/smtp.ts";
+import { resolvePreviewConfig, runIssueOpen, runIssuePreview } from "./issue.ts";
 import { runPipelineCommand } from "./run.ts";
 
 // A dispatcher and nothing else: the command is resolved before any adapter,
@@ -38,6 +42,24 @@ if (command.kind === "unknown") {
   const sql = connect();
   try {
     await runIssueOpen(sql);
+  } finally {
+    await sql.end();
+  }
+} else if (command.kind === "issue-preview") {
+  const config = resolvePreviewConfig(values, process.env);
+  if (!config.ok) {
+    console.error(config.message);
+    process.exit(2);
+  }
+  const sql = connect();
+  try {
+    const sent = await runIssuePreview(sql, {
+      send: createSmtpSender(config.smtpUrl),
+      from: config.from,
+      to: config.to,
+      publicUrl: config.publicUrl,
+    });
+    if (!sent) process.exitCode = 1;
   } finally {
     await sql.end();
   }
