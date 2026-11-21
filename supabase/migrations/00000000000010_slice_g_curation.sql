@@ -110,14 +110,22 @@ grant execute on function is_operator_request() to authenticated;
 revoke all on change_event, event_source from authenticated;
 grant select on issue, issue_item, change_event, event_source to authenticated;
 
+-- Each policy wraps the call in a scalar subquery: `(select
+-- public.is_operator_request())`, not a bare `is_operator_request()`. A bare
+-- call in a policy is evaluated for every row the query examines, and the
+-- planner cannot skip it because the function is `security definer`. The
+-- subquery has no reference to the row, so Postgres evaluates it once, as an
+-- InitPlan, and reuses the answer: the same result, once per query instead of
+-- once per row. A test reads the plan to keep it that way. The curation page
+-- reads hundreds of `change_event` rows at a time.
 create policy operator_reads_issue on issue
-  for select to authenticated using (is_operator_request());
+  for select to authenticated using ((select public.is_operator_request()));
 create policy operator_reads_issue_item on issue_item
-  for select to authenticated using (is_operator_request());
+  for select to authenticated using ((select public.is_operator_request()));
 create policy operator_reads_change_event on change_event
-  for select to authenticated using (is_operator_request());
+  for select to authenticated using ((select public.is_operator_request()));
 create policy operator_reads_event_source on event_source
-  for select to authenticated using (is_operator_request());
+  for select to authenticated using ((select public.is_operator_request()));
 
 -- 3. Guards shared by the four writes.
 --

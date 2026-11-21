@@ -590,6 +590,26 @@ describe("the operator's curation access", () => {
     expect(await answer(claimsFor({ sub: STRANGER_USER_ID }))).toBe(false);
   });
 
+  // `using (is_operator_request())` is a call Postgres makes for every row it
+  // examines, and it cannot be skipped or hoisted because the function is
+  // `security definer`. `using ((select is_operator_request()))` is an
+  // uncorrelated subquery, which the planner runs once as an InitPlan and then
+  // reuses. The plan is the observable difference, so it is what this checks.
+  it.each(readable)(
+    "evaluates the operator check once per query, not once per row, on %s",
+    async (table) => {
+      const plan = await asAuthenticated(claimsFor(), async (tx) =>
+        (await tx.unsafe(`explain (costs off) select * from ${table}`))
+          .map((row) => String(row["QUERY PLAN"]))
+          .join("\n"),
+      );
+
+      expect(plan).toMatch(/InitPlan/);
+      // The call itself sits in the InitPlan, not in the per-row filter.
+      expect(plan).not.toMatch(/Filter: .*is_operator_request/);
+    },
+  );
+
   it("denies authenticated, operator or not, the tables a subscriber's data lives in", async () => {
     for (const claims of [claimsFor(), claimsFor({ sub: STRANGER_USER_ID })]) {
       for (const table of ["subscriber", "subscription", "delivery", "issue_delivery", "digest"]) {
