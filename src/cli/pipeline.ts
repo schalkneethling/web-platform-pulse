@@ -47,7 +47,10 @@ const deliverPending = async (sql: Sql, channels: DeliveryChannel[]): Promise<De
     for (const pending of await digestsAwaitingDelivery(sql, channel.id)) {
       const digest = await getDigest(sql, pending.digestId);
       if (digest === null) continue;
-      const result = await channel.send(digest, { email: pending.email });
+      const result = await channel.send(digest, {
+        email: pending.email,
+        unsubscribeToken: pending.unsubscribeToken,
+      });
       await recordDelivery(sql, pending.digestId, channel.id, result);
       if (result.status === "failed") {
         console.error(

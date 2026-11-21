@@ -21,16 +21,19 @@ const load = (name: string): WebFeaturesData =>
   ) as WebFeaturesData;
 
 const FROM = "Platform Pulse <pulse@localhost>";
+const PUBLIC_URL = "https://pulse.example.com";
 
 const emailChannel = createEmailChannel({
   from: FROM,
   send: createSmtpSender(MAILPIT_SMTP_URL),
+  publicUrl: PUBLIC_URL,
 });
 
 /** Same channel identity, but its SMTP server does not exist. */
 const brokenChannel = createEmailChannel({
   from: FROM,
   send: createSmtpSender("smtp://localhost:54399"),
+  publicUrl: PUBLIC_URL,
 });
 
 const run = (fixture: string, channels: DeliveryChannel[]) =>
@@ -58,9 +61,15 @@ const inbox = async (): Promise<{ total: number; messages: InboxMessage[] }> => 
   return (await response.json()) as { total: number; messages: InboxMessage[] };
 };
 
-const messageHtml = async (id: string): Promise<string> => {
+const messageBodies = async (id: string): Promise<{ HTML: string; Text: string }> => {
   const response = await fetch(`${MAILPIT_API_URL}/api/v1/message/${id}`);
-  return ((await response.json()) as { HTML: string }).HTML;
+  return (await response.json()) as { HTML: string; Text: string };
+};
+
+/** Mailpit lists each header's values under its name. */
+const messageHeaders = async (id: string): Promise<Record<string, string[]>> => {
+  const response = await fetch(`${MAILPIT_API_URL}/api/v1/message/${id}/headers`);
+  return (await response.json()) as Record<string, string[]>;
 };
 
 beforeEach(async () => {
@@ -88,13 +97,40 @@ describe("email delivery", () => {
     expect(total).toBe(1);
     expect(messages[0]!.To[0]!.Address).toBe("operator@example.com");
 
-    const html = await messageHtml(messages[0]!.ID);
+    const { HTML: html } = await messageBodies(messages[0]!.ID);
     expect(html).toMatch(/widely available/i);
     expect(html).toContain("https://webstatus.dev/features/lh");
 
     const repeat = await run("new.json", [emailChannel]);
     expect(repeat.deliveries).toEqual({ sent: 0, failed: 0 });
     expect((await inbox()).total).toBe(1);
+  });
+
+  it("every message carries the recipient's unsubscribe link", SLOW_SMTP, async () => {
+    await run("old.json", [emailChannel]);
+    await run("new.json", [emailChannel]);
+    const [row] = await sql<{ unsubscribe_token: string }[]>`
+      select unsubscribe_token from subscriber where email = 'operator@example.com'
+    `;
+    const link = `${PUBLIC_URL}/unsubscribe?token=${row!.unsubscribe_token}`;
+
+    const { messages } = await inbox();
+    const { HTML, Text } = await messageBodies(messages[0]!.ID);
+    expect(HTML).toContain(link);
+    expect(Text).toContain(link);
+
+    const headers = await messageHeaders(messages[0]!.ID);
+    expect(headers["List-Unsubscribe"]).toEqual([`<${link}>`]);
+    expect(headers["List-Unsubscribe-Post"]).toBeUndefined();
+  });
+
+  it("an unsubscribed recipient is sent nothing", SLOW_SMTP, async () => {
+    await run("old.json", [emailChannel]);
+    await sql`update subscriber set unsubscribed_at = now()`;
+    const second = await run("new.json", [emailChannel]);
+
+    expect(second.deliveries).toEqual({ sent: 0, failed: 0 });
+    expect((await inbox()).total).toBe(0);
   });
 
   it("a failed delivery is re-sent by the next run", SLOW_SMTP, async () => {

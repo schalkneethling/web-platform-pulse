@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { THEME_ITEM_CAP, type DigestView } from "../core/digest.ts";
 import type { ChangeEvent } from "../core/types.ts";
-import { renderDigestEmail } from "./email.ts";
+import { createEmailChannel, renderDigestEmail, type EmailMessage } from "./email.ts";
 
 const event = (id: string, overrides: Partial<ChangeEvent>): ChangeEvent => ({
   id,
@@ -28,6 +28,8 @@ const event = (id: string, overrides: Partial<ChangeEvent>): ChangeEvent => ({
   ...overrides,
 });
 
+const UNSUBSCRIBE = "https://pulse.example.com/unsubscribe?token=tok-1";
+
 const digest = (items: ChangeEvent[]): DigestView => ({
   id: "digest-1",
   cadence: "daily",
@@ -38,8 +40,10 @@ const digest = (items: ChangeEvent[]): DigestView => ({
 
 describe("renderDigestEmail", () => {
   it("counts the changes in the subject", () => {
-    expect(renderDigestEmail(digest([event("lh", {})])).subject).toBe("Platform Pulse — 1 change");
-    expect(renderDigestEmail(digest([event("a", {}), event("b", {})])).subject).toBe(
+    expect(renderDigestEmail(digest([event("lh", {})]), UNSUBSCRIBE).subject).toBe(
+      "Platform Pulse — 1 change",
+    );
+    expect(renderDigestEmail(digest([event("a", {}), event("b", {})]), UNSUBSCRIBE).subject).toBe(
       "Platform Pulse — 2 changes",
     );
   });
@@ -50,6 +54,7 @@ describe("renderDigestEmail", () => {
         event("lh", { title: "lh is now Baseline widely available" }),
         event("style-queries", { title: "Style queries is now Baseline newly available" }),
       ]),
+      UNSUBSCRIBE,
     );
 
     expect(html.indexOf("lh is now")).toBeGreaterThan(-1);
@@ -71,6 +76,7 @@ describe("renderDigestEmail", () => {
           taxonomy: ["browser"],
         }),
       ]),
+      UNSUBSCRIBE,
     );
 
     expect(html.indexOf("<h2>CSS</h2>")).toBeGreaterThan(-1);
@@ -97,6 +103,7 @@ describe("renderDigestEmail", () => {
           ],
         }),
       ]),
+      UNSUBSCRIBE,
     );
 
     expect(html).toContain("covering 9 June 2026 to 10 June 2026");
@@ -130,6 +137,7 @@ describe("renderDigestEmail", () => {
         support("light-dark-image", "light-dark() image values", "chrome"),
         support("light-dark-image", "light-dark() image values", "edge"),
       ]),
+      UNSUBSCRIBE,
     );
 
     expect(html).not.toContain("chrome 150 supports");
@@ -147,9 +155,24 @@ describe("renderDigestEmail", () => {
   it("escapes markup in titles so content cannot inject HTML", () => {
     const { html } = renderDigestEmail(
       digest([event("x", { title: 'selector <script>"&"</script>' })]),
+      UNSUBSCRIBE,
     );
     expect(html).not.toContain("<script>");
     expect(html).toContain("selector &lt;script&gt;&quot;&amp;&quot;&lt;/script&gt;");
+  });
+
+  it("ends both bodies with a link to the recipient's unsubscribe page", () => {
+    const { html, text } = renderDigestEmail(digest([event("lh", {})]), UNSUBSCRIBE);
+
+    expect(html).toContain(`<a href="${UNSUBSCRIBE}">Unsubscribe</a>`);
+    expect(html.indexOf("Unsubscribe")).toBeGreaterThan(html.indexOf("lh"));
+    expect(text).toContain(`Unsubscribe from Platform Pulse: ${UNSUBSCRIBE}`);
+    expect(text.trimEnd().endsWith(UNSUBSCRIBE)).toBe(true);
+  });
+
+  it("escapes the unsubscribe link in the HTML body", () => {
+    const { html } = renderDigestEmail(digest([event("lh", {})]), 'https://x.test/u?a=1&b="2"');
+    expect(html).toContain('href="https://x.test/u?a=1&amp;b=&quot;2&quot;"');
   });
 
   describe("folding", () => {
@@ -160,7 +183,7 @@ describe("renderDigestEmail", () => {
 
     it("folds a theme over the cap to the cap's worth, with an overflow line", () => {
       const items = themeItems(THEME_ITEM_CAP + 3);
-      const { html, text } = renderDigestEmail(digest(items));
+      const { html, text } = renderDigestEmail(digest(items), UNSUBSCRIBE);
 
       for (const item of items.slice(0, THEME_ITEM_CAP)) {
         expect(html).toContain(item.title);
@@ -172,7 +195,7 @@ describe("renderDigestEmail", () => {
 
     it("does not render the titles of folded items", () => {
       const items = themeItems(THEME_ITEM_CAP + 3);
-      const { html, text } = renderDigestEmail(digest(items));
+      const { html, text } = renderDigestEmail(digest(items), UNSUBSCRIBE);
 
       for (const item of items.slice(THEME_ITEM_CAP)) {
         expect(html).not.toContain(item.title);
@@ -185,7 +208,7 @@ describe("renderDigestEmail", () => {
       const underCap = themeItems(THEME_ITEM_CAP - 1);
 
       for (const items of [atCap, underCap]) {
-        const { html, text } = renderDigestEmail(digest(items));
+        const { html, text } = renderDigestEmail(digest(items), UNSUBSCRIBE);
         for (const item of items) {
           expect(html).toContain(item.title);
           expect(text).toContain(item.title);
@@ -214,7 +237,7 @@ describe("renderDigestEmail", () => {
 
       const rest = themeItems(THEME_ITEM_CAP + 3);
       const rollupEvents = [support("chrome", "150"), support("edge", "150")];
-      const { html, text } = renderDigestEmail(digest([...rest, ...rollupEvents]));
+      const { html, text } = renderDigestEmail(digest([...rest, ...rollupEvents]), UNSUBSCRIBE);
 
       // Rollups are exempt from the cap, so the sentence survives intact even
       // though three plain items in the same theme were folded away.
@@ -225,5 +248,51 @@ describe("renderDigestEmail", () => {
       expect(html).toContain("  <p>+3 more</p>");
       expect(text).toContain("+3 more");
     });
+  });
+});
+
+describe("createEmailChannel", () => {
+  const sentThrough = async (token: string): Promise<EmailMessage> => {
+    const sent: EmailMessage[] = [];
+    const channel = createEmailChannel({
+      from: "Platform Pulse <pulse@localhost>",
+      publicUrl: "https://pulse.example.com",
+      send: (message) => {
+        sent.push(message);
+        return Promise.resolve();
+      },
+    });
+    const result = await channel.send(digest([event("lh", {})]), {
+      email: "reader@example.com",
+      unsubscribeToken: token,
+    });
+    expect(result).toEqual({ status: "sent" });
+    return sent[0]!;
+  };
+
+  it("links each recipient's own unsubscribe token in the bodies and the header", async () => {
+    const message = await sentThrough("tok-1");
+    const link = "https://pulse.example.com/unsubscribe?token=tok-1";
+
+    expect(message.to).toBe("reader@example.com");
+    expect(message.html).toContain(`href="${link}"`);
+    expect(message.text).toContain(link);
+    expect(message.headers).toEqual({ "List-Unsubscribe": `<${link}>` });
+  });
+
+  it("does not send the one-click header the unsubscribe endpoint cannot honour", async () => {
+    const message = await sentThrough("tok-1");
+    expect(Object.keys(message.headers ?? {})).not.toContain("List-Unsubscribe-Post");
+  });
+
+  it("reports a transport failure instead of throwing", async () => {
+    const channel = createEmailChannel({
+      from: "Platform Pulse <pulse@localhost>",
+      publicUrl: "https://pulse.example.com",
+      send: () => Promise.reject(new Error("connection refused")),
+    });
+    expect(
+      await channel.send(digest([event("lh", {})]), { email: "a@b.co", unsubscribeToken: "t" }),
+    ).toEqual({ status: "failed", error: "connection refused" });
   });
 });

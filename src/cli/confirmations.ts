@@ -1,5 +1,6 @@
 import { renderConfirmationEmail } from "../delivery/confirmation.ts";
 import type { SendEmail } from "../delivery/email.ts";
+import { confirmUrl } from "../delivery/links.ts";
 import { scrubCredentials } from "../delivery/scrub.ts";
 import type { Sql } from "../store/db.ts";
 import { confirmationsAwaitingSend, recordConfirmationSent } from "../store/store.ts";
@@ -37,11 +38,9 @@ export const sendPendingConfirmations = async (
   const pending = await confirmationsAwaitingSend(sql, options.limit ?? DEFAULT_LIMIT);
 
   for (const { subscriberId, email, confirmToken } of pending) {
-    const confirmUrl = new URL("/confirm", options.publicUrl);
-    confirmUrl.searchParams.set("token", confirmToken);
     try {
       await options.send({
-        ...renderConfirmationEmail({ confirmUrl: confirmUrl.toString() }),
+        ...renderConfirmationEmail({ confirmUrl: confirmUrl(options.publicUrl, confirmToken) }),
         from: options.from,
         to: email,
       });

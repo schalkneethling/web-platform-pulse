@@ -171,6 +171,29 @@ export const requestSubscription = async (sql: Queryable, email: string): Promis
   await sql`select request_subscription(${email})`;
 };
 
+/**
+ * The confirm link's action (migration 6). True when the token belongs to a
+ * subscriber who is now confirmed, whether this call confirmed them or an
+ * earlier one did; false for an unknown token or one whose owner has
+ * unsubscribed.
+ */
+export const confirmSubscription = async (sql: Queryable, token: string): Promise<boolean> => {
+  const rows = await sql<{ confirm_subscription: boolean }[]>`
+    select confirm_subscription(${token}::uuid)
+  `;
+  return rows[0]!.confirm_subscription;
+};
+
+/**
+ * The unsubscribe link's action (migration 6). True when the token belongs to
+ * a subscriber who is now unsubscribed, including one who already was; false
+ * for an unknown token.
+ */
+export const unsubscribe = async (sql: Queryable, token: string): Promise<boolean> => {
+  const rows = await sql<{ unsubscribe: boolean }[]>`select unsubscribe(${token}::uuid)`;
+  return rows[0]!.unsubscribe;
+};
+
 export interface PendingConfirmation {
   subscriberId: string;
   email: string;
@@ -372,6 +395,7 @@ export const getDigest = async (sql: Sql, digestId: string): Promise<DigestView 
 export interface PendingDelivery {
   digestId: string;
   email: string;
+  unsubscribeToken: string;
 }
 
 /**
@@ -382,8 +406,8 @@ export const digestsAwaitingDelivery = async (
   sql: Sql,
   channelId: string,
 ): Promise<PendingDelivery[]> => {
-  const rows = await sql<{ digest_id: string; email: string }[]>`
-    select d.id as digest_id, s.email
+  const rows = await sql<{ digest_id: string; email: string; unsubscribe_token: string }[]>`
+    select d.id as digest_id, s.email, s.unsubscribe_token
     from digest d
     join subscriber s on s.id = d.subscriber_id
     where s.unsubscribed_at is null
@@ -393,7 +417,11 @@ export const digestsAwaitingDelivery = async (
     )
     order by d.window_end
   `;
-  return rows.map((row) => ({ digestId: row.digest_id, email: row.email }));
+  return rows.map((row) => ({
+    digestId: row.digest_id,
+    email: row.email,
+    unsubscribeToken: row.unsubscribe_token,
+  }));
 };
 
 /** One delivery row per attempt per channel, carrying status (§10). */

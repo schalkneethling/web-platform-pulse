@@ -8,10 +8,12 @@ import type { CandidateEvent } from "../../src/core/types.ts";
 import { type Queryable, connect } from "../../src/store/db.ts";
 import {
   assembleDigest,
+  confirmSubscription,
   ensureOperator,
   ensureSource,
   ingestCandidates,
   requestSubscription,
+  unsubscribe,
 } from "../../src/store/store.ts";
 
 const sql = connect();
@@ -116,6 +118,28 @@ describe("anon signup", () => {
   });
 });
 
+describe("anon confirm and unsubscribe", () => {
+  // The two email links reach `subscriber` the same way signup does: through a
+  // security definer function, with the table itself still closed to anon.
+  it("can confirm and unsubscribe by token and still cannot read subscriber", async () => {
+    await asAnon((tx) => requestSubscription(tx, "visitor@example.com"));
+    const [row] = await sql<{ confirm_token: string; unsubscribe_token: string }[]>`
+      select confirm_token, unsubscribe_token from subscriber where email = 'visitor@example.com'
+    `;
+
+    expect(await asAnon((tx) => confirmSubscription(tx, row!.confirm_token))).toBe(true);
+    expect(await asAnon((tx) => unsubscribe(tx, row!.unsubscribe_token))).toBe(true);
+
+    expect(
+      await sql`select confirmed_at, unsubscribed_at from subscriber where email = 'visitor@example.com'`,
+    ).toMatchObject([{ confirmed_at: expect.any(Date), unsubscribed_at: expect.any(Date) }]);
+
+    await expect(asAnon((tx) => tx.unsafe("select * from subscriber"))).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+});
+
 describe("the policy layer itself", () => {
   // Locally `anon` was never granted anything, so the denials above would
   // pass with RLS switched off entirely. Supabase hands anon table grants by
@@ -175,16 +199,22 @@ describe("the policy layer itself", () => {
     ).toMatchObject([{ ok: false }]);
   });
 
-  it("leaves request_subscription as the only public function anon can execute", async () => {
-    // Migration 4 withdrew EXECUTE from PUBLIC; migration 5 grants it back to
-    // anon for this one function, so the signup form can reach it. Any other
-    // name appearing here is a function that became anon-callable by accident.
+  it("leaves the three subscriber functions as the only public ones anon can execute", async () => {
+    // Migration 4 withdrew EXECUTE from PUBLIC; migrations 5 and 6 grant it
+    // back to anon for these three, so signup, confirm and unsubscribe can be
+    // reached from the browser. Any other name appearing here is a function
+    // that became anon-callable by accident.
     const executable = await sql<{ proname: string }[]>`
       select p.proname from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'execute')
+      order by p.proname
     `;
-    expect(executable).toEqual([{ proname: "request_subscription" }]);
+    expect(executable).toEqual([
+      { proname: "confirm_subscription" },
+      { proname: "request_subscription" },
+      { proname: "unsubscribe" },
+    ]);
   });
 
   it("grants anon a read policy on exactly the four digest tables", async () => {
