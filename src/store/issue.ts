@@ -1,10 +1,12 @@
 import { sectionFor, type Section } from "../core/issue.ts";
 import { orderForDigest } from "../core/digest.ts";
+import type { DeliveryResult } from "../core/delivery.ts";
 import type { ChangeEvent } from "../core/types.ts";
 import type { Queryable, Sql } from "./db.ts";
 import {
   CADENCE_PERIOD_MS,
   eventsWithProvenance,
+  MAX_FAILED_DELIVERIES,
   rowToEvent,
   type ChangeEventRow,
 } from "./store.ts";
@@ -140,6 +142,111 @@ export const getDraftIssue = async (sql: Sql): Promise<IssueView | null> => {
     from issue where status = 'draft'
   `;
   return issues[0] ? issueView(sql, issues[0]) : null;
+};
+
+/**
+ * Publishes the open draft with one statement guarded by `status = 'draft'`, so
+ * two concurrent publishes cannot both flip it and `published_at` is stamped
+ * once. An issue with no included item and a blank intro has nothing to send,
+ * so it is refused and stays a draft. The three outcomes are told apart with a
+ * read after the update, which is safe because a draft only ever leaves that
+ * state through this function.
+ */
+export type PublishResult =
+  | { outcome: "published"; number: number }
+  | { outcome: "refused"; number: number }
+  | { outcome: "no-draft" };
+
+export const publishDraft = async (sql: Sql): Promise<PublishResult> => {
+  const published = await sql<{ number: number }[]>`
+    update issue set status = 'published', published_at = now()
+    where status = 'draft'
+      and (
+        btrim(intro) <> ''
+        or exists (
+          select 1 from issue_item where issue_item.issue_id = issue.id and issue_item.included
+        )
+      )
+    returning number
+  `;
+  if (published[0]) return { outcome: "published", number: published[0].number };
+  const drafts = await sql<{ number: number }[]>`select number from issue where status = 'draft'`;
+  return drafts[0] ? { outcome: "refused", number: drafts[0].number } : { outcome: "no-draft" };
+};
+
+/** The most recently published issue with its items, or null before the first publication. */
+export const getLatestPublishedIssue = async (sql: Sql): Promise<IssueView | null> => {
+  const issues = await sql<IssueRow[]>`
+    select id, number, title, intro, status, window_start, window_end
+    from issue where status = 'published' order by number desc limit 1
+  `;
+  return issues[0] ? issueView(sql, issues[0]) : null;
+};
+
+export interface PendingIssueDelivery {
+  subscriberId: string;
+  email: string;
+  unsubscribeToken: string;
+}
+
+/**
+ * Subscribers a published issue still owes a send on a channel. Like the
+ * daily digest, a failed attempt leaves the subscriber pending until
+ * `MAX_FAILED_DELIVERIES` failures. Unlike the digest there is no taxonomy or
+ * significance filter: an issue is one artifact for everyone. Someone who
+ * confirmed after the issue was published is not owed it, because it was never
+ * addressed to them and would arrive as old news.
+ */
+export const subscribersAwaitingIssue = async (
+  sql: Sql,
+  issueId: string,
+  channelId: string,
+): Promise<PendingIssueDelivery[]> => {
+  const rows = await sql<{ id: string; email: string; unsubscribe_token: string }[]>`
+    select s.id, s.email, s.unsubscribe_token
+    from issue i
+    join subscriber s
+      on s.confirmed_at is not null
+     and s.unsubscribed_at is null
+     and s.confirmed_at <= i.published_at
+    where i.id = ${issueId}
+      and i.status = 'published'
+      and not exists (
+        select 1 from issue_delivery d
+        where d.issue_id = i.id and d.subscriber_id = s.id
+          and d.channel = ${channelId} and d.status = 'sent'
+      )
+      and (
+        select count(*) from issue_delivery d
+        where d.issue_id = i.id and d.subscriber_id = s.id
+          and d.channel = ${channelId} and d.status = 'failed'
+      ) < ${MAX_FAILED_DELIVERIES}
+    order by s.confirmed_at, s.id
+  `;
+  return rows.map((row) => ({
+    subscriberId: row.id,
+    email: row.email,
+    unsubscribeToken: row.unsubscribe_token,
+  }));
+};
+
+/**
+ * One `issue_delivery` row per attempt. A second `sent` row for the same issue,
+ * subscriber and channel violates `issue_delivery_sent_once_idx` and throws,
+ * exactly as `recordDelivery` does for a digest.
+ */
+export const recordIssueDelivery = async (
+  sql: Queryable,
+  issueId: string,
+  subscriberId: string,
+  channelId: string,
+  result: DeliveryResult,
+): Promise<void> => {
+  await sql`
+    insert into issue_delivery (issue_id, subscriber_id, channel, status, error)
+    values (${issueId}, ${subscriberId}, ${channelId}, ${result.status},
+            ${result.status === "failed" ? result.error : null})
+  `;
 };
 
 /**

@@ -1,0 +1,72 @@
+name: Issue
+
+# The weekly issue's three commands (`issue open`, `issue preview`, `issue
+# publish`; see src/cli/issue.ts). Which trigger runs what:
+#
+#   Schedule (Sunday 06:00 UTC): runs `issue open` only, which cuts the draft
+#   for the week that just ended, or leaves the open draft untouched. It sends
+#   nothing, so a schedule can never mail subscribers. Publishing stays a human
+#   decision because the issue's value is the note the operator writes on each
+#   item.
+#
+#   Manual run (Actions tab, "Run workflow", pick a command):
+#     open     cut the draft by hand, for instance after a missed Sunday.
+#     preview  mail the open draft, marked as a preview, to the operator address
+#              (PULSE_SUBSCRIBER_EMAIL). It writes nothing, so repeat it freely.
+#     publish  publish the draft and email every confirmed subscriber. It is safe
+#              to run again: it sends nothing twice and retries only the sends
+#              that failed.
+on:
+  schedule:
+    - cron: "0 6 * * 0" # 06:00 UTC on Sundays
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "Which issue command to run"
+        type: choice
+        required: true
+        default: preview
+        options:
+          - open
+          - preview
+          - publish
+
+permissions:
+  contents: read
+
+# The same group as pulse.yml and confirmations.yml. Those runs read and send
+# from the same subscriber rows, and two overlapping `issue publish` runs would
+# race on the same pending subscribers. A run that finds another in progress
+# waits for it rather than cancelling it.
+concurrency:
+  group: confirmations
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      # The command arrives through the environment and is checked against the
+      # three valid values before use, so it is never interpolated into the
+      # script. A scheduled run has no input and falls back to `open`.
+      - name: Run the issue command
+        env:
+          ISSUE_COMMAND: ${{ github.event_name == 'workflow_dispatch' && inputs.command || 'open' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PULSE_SMTP_URL: ${{ secrets.PULSE_SMTP_URL }}
+          PULSE_PUBLIC_URL: ${{ secrets.PULSE_PUBLIC_URL }}
+          PULSE_EMAIL_FROM: ${{ secrets.PULSE_EMAIL_FROM }}
+          # Only `preview` reads the operator address; `open` and `publish` ignore it.
+          PULSE_SUBSCRIBER_EMAIL: ${{ secrets.PULSE_SUBSCRIBER_EMAIL }}
+        run: |
+          case "$ISSUE_COMMAND" in
+            open | preview | publish) ;;
+            *)
+              echo "unknown issue command: $ISSUE_COMMAND (expected open, preview or publish)" >&2
+              exit 2
+              ;;
+          esac
+          bun run src/cli/index.ts issue "$ISSUE_COMMAND"

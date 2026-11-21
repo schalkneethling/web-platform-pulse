@@ -19,6 +19,12 @@
 //   vp run pulse issue preview   mail the open draft, marked as a preview, to the operator
 //       (PULSE_SUBSCRIBER_EMAIL or --email); needs PULSE_SMTP_URL (or --smtp) and
 //       PULSE_PUBLIC_URL, exits 1 when no draft is open, and writes nothing
+//   vp run pulse issue publish   publish the open draft (refused when it has no included
+//       item and no intro), then email the latest published issue to every confirmed
+//       subscriber who has not received it, with no taxonomy or significance filter.
+//       Needs PULSE_SMTP_URL (or --smtp) and PULSE_PUBLIC_URL, not the operator address.
+//       Safe to re-run: it sends nothing twice and retries only failed sends. Exits 1
+//       on a refused draft or any failed send, 2 on a configuration error
 //
 // With no subcommand the run is the pipeline, followed by any pending signup
 // confirmations. Sending mail needs PULSE_SMTP_URL and PULSE_PUBLIC_URL (the
@@ -26,7 +32,13 @@
 import { connect } from "../store/db.ts";
 import { parseCli, resolveCommand } from "./command.ts";
 import { createSmtpSender } from "../delivery/smtp.ts";
-import { resolvePreviewConfig, runIssueOpen, runIssuePreview } from "./issue.ts";
+import {
+  resolvePreviewConfig,
+  resolvePublishConfig,
+  runIssueOpen,
+  runIssuePreview,
+  runIssuePublish,
+} from "./issue.ts";
 import { runPipelineCommand } from "./run.ts";
 
 // A dispatcher and nothing else: the command is resolved before any adapter,
@@ -60,6 +72,23 @@ if (command.kind === "unknown") {
       publicUrl: config.publicUrl,
     });
     if (!sent) process.exitCode = 1;
+  } finally {
+    await sql.end();
+  }
+} else if (command.kind === "issue-publish") {
+  const config = resolvePublishConfig(values, process.env);
+  if (!config.ok) {
+    console.error(config.message);
+    process.exit(2);
+  }
+  const sql = connect();
+  try {
+    const ok = await runIssuePublish(sql, {
+      send: createSmtpSender(config.smtpUrl),
+      from: config.from,
+      publicUrl: config.publicUrl,
+    });
+    if (!ok) process.exitCode = 1;
   } finally {
     await sql.end();
   }
