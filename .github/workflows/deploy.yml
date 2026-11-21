@@ -81,6 +81,10 @@ jobs:
 
       - name: Build the reader
         env:
+          # Keeps Varlock out of the build (see vite.config.ts): Vite reads
+          # the two values below straight from the environment, and nothing
+          # on this runner can reach 1Password.
+          APP_ENV: production
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: vp run build

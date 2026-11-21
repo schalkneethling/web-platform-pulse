@@ -12,6 +12,13 @@ on:
 permissions:
   contents: read
 
+# Varlock resolves .env.schema whenever the reader is served or built. Under
+# APP_ENV=test it reads the committed .env.test instead of 1Password, which
+# is what keeps this workflow free of secrets -- so Dependabot's PRs, which
+# get none, still pass.
+env:
+  APP_ENV: test
+
 # A newer push to the same branch/PR makes in-flight runs redundant.
 concurrency:
   group: ci-${{ github.ref }}

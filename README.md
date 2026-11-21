@@ -55,10 +55,20 @@ toolchain the project is built on (`vp` comes with the dependencies).
 ```sh
 vp install                 # install dependencies
 vp run db:up               # disposable Postgres in Docker, migrations applied
-vp run pulse -- --data tests/fixtures/web-features/old.json   # seed the cursor
-vp run pulse -- --data tests/fixtures/web-features/new.json   # emit a digest
+APP_ENV=test vp run pulse -- --data tests/fixtures/web-features/old.json   # seed the cursor
+APP_ENV=test vp run pulse -- --data tests/fixtures/web-features/new.json   # emit a digest
 vp run dev:reader          # reader at http://localhost:5173
 ```
+
+Configuration comes from [Varlock](https://varlock.dev): `.env.schema` names
+every variable, and each value is a reference into the 1Password item
+`web-platform-pulse` in the `dev` vault, one field per variable. There are no
+`.env` files to fill in. `APP_ENV=test` swaps the whole item for the
+committed `.env.test` -- the local Docker services and placeholders -- which
+is what the commands above, `vp test`, Playwright, and CI run under. Anything
+else (`vp run pulse` against live sources, `vp dev`) resolves through the
+[1Password CLI](https://developer.1password.com/docs/cli/) and the desktop
+app's CLI integration, so both need to be installed and enabled.
 
 The reader reads through PostgREST with an anon key rather than through the
 dev server, so `vp run dev:reader` is the entry point: it brings up a local
@@ -83,6 +93,9 @@ Useful flags and environment variables:
 | `--smtp` / `PULSE_SMTP_URL`          | SMTP transport; omit it and email is skipped                |
 | `PULSE_EMAIL_FROM`                   | Sender address                                              |
 | `DATABASE_URL`                       | Postgres connection (defaults to the local Docker instance) |
+
+Every variable in the table is an item in `.env.schema`; setting it in the
+shell overrides what Varlock resolves.
 
 ## Testing
 
@@ -112,9 +125,19 @@ walkthrough and what comes next.
 - **Cloudflare Workers** hosts the reader as static assets (`wrangler.jsonc`),
   deployed by `.github/workflows/deploy.yml` on every push to `main`.
 
-Repository secrets: `DATABASE_URL`, `PULSE_SMTP_URL`, `PULSE_SUBSCRIBER_EMAIL`,
-`PULSE_EMAIL_FROM`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
-`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+1Password is used on the development machine only. The workflows read
+GitHub's own repository secrets -- `DATABASE_URL`, `PULSE_SMTP_URL`,
+`PULSE_SUBSCRIBER_EMAIL`, `PULSE_EMAIL_FROM`, `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_ANON_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` --
+and one command copies them there from the `web-platform-pulse` item:
+
+```sh
+vp run secrets:push --dry-run   # list what would be pushed
+vp run secrets:push             # resolve from 1Password, push with `gh secret set`
+```
+
+Rotating a value means editing the item and running that command again. No
+1Password credential lives outside the laptop, so there is no service account.
 
 The two `VITE_` values are compiled into the bundle and are public by design:
 the anon key selects a Postgres role, and `supabase/migrations/` is what

@@ -3,8 +3,34 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 import { REST_URL } from "./scripts/dev-rest.ts";
 
+// Varlock replaces Vite's .env loading with .env.schema, so the dev server
+// and the build resolve VITE_SUPABASE_* from 1Password -- or from .env.test
+// under APP_ENV=test. Only those commands need it: `vp check` and `vp test`
+// load this file too, and resolving 1Password in order to lint, or to run
+// tests that take their setup from scripts/ and fixtures, would be a prompt
+// nobody asked for. VP_RAW_SUBCOMMAND is how Vite+ tells the config which
+// command is loading it. It is not documented; if it goes away, the symptom
+// is a dev server whose reader throws for want of VITE_SUPABASE_URL.
+//
+// Imported here rather than at the top: merely importing the integration
+// resolves the schema, so a static import would put the prompt back.
+//
+// Not under APP_ENV=production either. There the host's own secret store
+// supplies the two VITE_ values as plain environment variables, which Vite
+// reads without help, and Varlock would insist on every other item in the
+// schema -- the database URL, the SMTP credentials -- being handed to a job
+// that only builds a static bundle.
+const needsConfig =
+  ["dev", "build", "preview"].includes(process.env.VP_RAW_SUBCOMMAND ?? "") &&
+  process.env.APP_ENV !== "production";
+const plugins = [react(), babel({ presets: [reactCompilerPreset()] })];
+if (needsConfig) {
+  const { varlockVitePlugin } = await import("@varlock/vite-integration");
+  plugins.unshift(varlockVitePlugin());
+}
+
 export default defineConfig({
-  plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
+  plugins,
   server: {
     // supabase-js always addresses `<project url>/rest/v1`. Locally the
     // project is a bare PostgREST container with no such prefix, so the dev

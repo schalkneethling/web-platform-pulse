@@ -15,6 +15,9 @@ const result = spawnSync("vp", ["dev", "--port", String(PORT), ...process.argv.s
   stdio: "inherit",
   env: {
     ...process.env,
+    // Everything here is local, so the dev server's Varlock plugin reads
+    // .env.test rather than asking 1Password for values it will not use.
+    APP_ENV: "test",
     VITE_SUPABASE_URL: `http://localhost:${PORT}`,
     VITE_SUPABASE_ANON_KEY: anonKey(),
   },
