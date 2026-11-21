@@ -134,6 +134,77 @@ one confirmation email per address per day and three in total, twenty per
 run, two hundred per day, and a signup nobody confirms is deleted after seven
 days. A digest that fails to deliver is retried on five runs and then left.
 
+## The weekly issue
+
+The daily digest is the operator's monitoring tool. The weekly issue is one
+email, written by hand, that every confirmed subscriber receives once:
+
+```
+issue open     Sunday 06:00 UTC (issue.yml) or by hand: a draft, pre-filled with
+     │         the week's twelve top-ranked events
+/curate        in the reader: title, intro, which events, their section, a note on each
+     │
+issue preview  the draft mailed to the operator, subject marked [Preview]
+     │
+issue publish  status becomes published, every confirmed subscriber is mailed once
+```
+
+The three commands are `vp run pulse issue open`, `issue preview` and
+`issue publish`. `open` needs only the database; if a draft already exists it
+changes nothing. `preview` needs `PULSE_SMTP_URL`, `PULSE_PUBLIC_URL` and the
+operator's address (`PULSE_SUBSCRIBER_EMAIL` or `--email`), and writes nothing.
+`publish` needs the first two, refuses a draft with no included item and no
+intro, and is safe to run again: it sends nothing twice and retries only the
+sends that failed. A run that has a failed send exits 1.
+
+`.github/workflows/issue.yml` runs `open` every Sunday at 06:00 UTC, which sends
+no mail, and lets you run `open`, `preview` or `publish` from the Actions tab.
+Publishing is never scheduled, because the issue is worth what the operator
+writes on each item.
+
+### Curating at `/curate`
+
+Open `/curate` on the reader and press "Sign in with Google". The reader asks
+the database whether that account is the operator: the Google address must
+match the subscriber marked `is_operator` (the address in
+`PULSE_SUBSCRIBER_EMAIL`), and Supabase must report `google` as the sign-in
+provider. Any other account sees "This account is not the operator" and can
+read and write nothing, whatever the browser does, because the check lives in
+migration 10 and not in the page.
+
+The page lists the draft's window, included events first. Each event has an
+Include checkbox and, once included, a section and a note. Changes save as you
+make them: the checkbox and the section on change, the note, title and intro
+when the field loses focus and its text has changed. Each item says "Saved." or
+why it was not saved, and keeps what you typed when a save fails. The page
+shows the first 50 events that are not in the issue and a "Show 50 more"
+button for the rest.
+
+The public pages (`/`, `/confirm`, `/unsubscribe`) use a separate Supabase
+client that never holds a session, so they send the anon key and look the same
+to everyone, including an operator who is signed in. Only `/curate` keeps a
+session.
+
+Locally there is no Supabase Auth server (only Postgres and PostgREST), so the
+sign-in button works only against a real Supabase project. The browser tests
+sign in by storing a session minted with the local secret.
+
+### One-time production setup
+
+1. In the Supabase dashboard, enable the Google provider under Authentication
+   and give it a Google OAuth client. Google's authorised redirect URI is the
+   project's `https://<project-ref>.supabase.co/auth/v1/callback`.
+2. Under Authentication, URL Configuration, add the reader's origin and its
+   `/curate` page (`https://<reader origin>/curate`) to the allowed redirect
+   URLs. Without this, Supabase sends the operator back to the Site URL.
+3. Apply migrations 9 and 10 in the SQL editor, in order, before merging the
+   code that uses them, as with every migration.
+4. Turn off email-and-password sign-ups under Authentication. Only a Google
+   sign-in can curate, because the database requires `google` among the
+   token's providers, so a password account adds nothing but an account to
+   look after, and an account registered with the operator's address is one
+   Supabase could later link to the operator's Google identity.
+
 ## Testing
 
 ```sh
@@ -147,7 +218,10 @@ Integration tests deliver real email into [Mailpit](https://mailpit.axllent.org)
 
 The e2e run adds a PostgREST container (`http://localhost:54332`) so the
 browser exercises the same client, the same anon role and the same
-row-level-security policies the deployed reader will.
+row-level-security policies the deployed reader will. It also starts Mailpit,
+because the curation spec previews and publishes an issue through the real
+mail sender. That spec and the PostgREST curation spec share the single draft
+the database allows, so `playwright.config.ts` runs them one after the other.
 
 ## Deployment (prototype)
 
@@ -200,7 +274,7 @@ src/
   store/           PostgreSQL persistence: ingest, digest assembly, delivery records
   delivery/        channels (email) and transports (SMTP)
   cli/             the pipeline and its prototype trigger
-  reader/          React app rendering the latest digest
+  reader/          React app: the latest digest, signup, and the operator's /curate page
 supabase/          migrations (Supabase-compatible SQL)
 tests/             integration tests and shared fixtures
 e2e/               Playwright tests against the seeded reader

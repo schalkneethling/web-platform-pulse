@@ -29,7 +29,7 @@ interface DigestItemRow {
   change_event: ChangeEventRow | null;
 }
 
-interface ChangeEventRow {
+export interface ChangeEventRow {
   id: string;
   type: string;
   subject: Subject;
@@ -54,23 +54,27 @@ interface EventSourceRow {
   raw_ref: string | null;
 }
 
+/** The columns and embed that make up one `ChangeEventRow`. The curation view
+ * selects the same shape, so the two readers cannot disagree about it. */
+export const CHANGE_EVENT_SELECT = `
+  id, type, subject, title, before, after, occurred_at,
+  first_observed_at, last_updated_at, significance, taxonomy,
+  dedupe_key, correlation_key,
+  event_source ( source_id, url, title, observed_at, raw_ref )
+`;
+
 /** The columns and embeds that make up one digest, in one round trip. */
 const DIGEST_SELECT = `
   id, cadence, window_start, window_end,
   digest_item (
     position,
-    change_event (
-      id, type, subject, title, before, after, occurred_at,
-      first_observed_at, last_updated_at, significance, taxonomy,
-      dedupe_key, correlation_key,
-      event_source ( source_id, url, title, observed_at, raw_ref )
-    )
+    change_event ( ${CHANGE_EVENT_SELECT} )
   )
 `;
 
 /** Postgres hands back `+00:00` offsets; the server seam hands back `Z`.
  * Normalise so a DigestView means the same thing whichever produced it. */
-const iso = (value: string): string => new Date(value).toISOString();
+export const iso = (value: string): string => new Date(value).toISOString();
 
 /** Must match `order by observed_at, url collate "C"` in store.ts, so the
  * email and the reader list an event's sources identically.
@@ -95,7 +99,7 @@ const toProvenance = (row: EventSourceRow): Provenance => ({
   ...(row.raw_ref === null ? {} : { rawRef: row.raw_ref }),
 });
 
-const toEvent = (row: ChangeEventRow): ChangeEvent => ({
+export const toEvent = (row: ChangeEventRow): ChangeEvent => ({
   id: row.id,
   type: row.type as ChangeEventType,
   subject: row.subject,

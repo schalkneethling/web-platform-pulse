@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DigestView } from "../core/digest.ts";
+import { Curate } from "./curate.tsx";
 import { DigestArticle } from "./digest-article.tsx";
 import { fetchLatestDigest } from "./digest-source.ts";
 import { SignupForm } from "./signup-form.tsx";
@@ -63,6 +64,7 @@ const View = () => {
   const { pathname, search } = window.location;
   const token = new URLSearchParams(search).get("token") || null;
 
+  if (pathname === "/curate") return <Curate />;
   if (pathname === "/confirm") return <TokenAction action={CONFIRM_ACTION} token={token} />;
   if (pathname === "/unsubscribe") return <TokenAction action={UNSUBSCRIBE_ACTION} token={token} />;
   return <LatestDigest />;
