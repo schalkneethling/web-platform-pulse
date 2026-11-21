@@ -173,3 +173,26 @@ describe("unsubscribe", () => {
     expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
   });
 });
+
+describe("delivery gate", () => {
+  it("holds a re-requested subscriber's digest until they confirm again", async () => {
+    await ensureSource(sql, "web-features", "artifact-diff");
+    await requestSubscription(sql, "back@example.com");
+    const first = await subscriber("back@example.com");
+    await confirmSubscription(sql, first.confirm_token);
+    await ingestCandidates(sql, [candidate()]);
+    await assembleDigest(sql, first.id, new Date(Date.now() + 25 * 60 * 60 * 1000));
+    await unsubscribe(sql, first.unsubscribe_token);
+    // Re-requesting clears unsubscribed_at and confirmed_at (migration 5).
+    await requestSubscription(sql, "back@example.com");
+
+    expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
+
+    const again = await subscriber("back@example.com");
+    await confirmSubscription(sql, again.confirm_token);
+
+    expect(await digestsAwaitingDelivery(sql, "email")).toMatchObject([
+      { email: "back@example.com" },
+    ]);
+  });
+});

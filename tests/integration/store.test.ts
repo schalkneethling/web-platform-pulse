@@ -106,12 +106,24 @@ const observedAt = async (dedupeKey: string, when: Date): Promise<void> => {
   await sql`update change_event set first_observed_at = ${when} where dedupe_key = ${dedupeKey}`;
 };
 
+/**
+ * A subscriber's first digest window starts no earlier than their
+ * confirmed_at, and these tests place events in the past. The operator is
+ * therefore confirmed before the earliest event, as if they had subscribed
+ * long ago.
+ */
+const ensureEarlyOperator = async (): Promise<string> => {
+  const subscriberId = await ensureOperator(sql, "operator@example.com");
+  await sql`update subscriber set confirmed_at = '2026-01-01T00:00:00Z' where id = ${subscriberId}`;
+  return subscriberId;
+};
+
 const JUN_1 = new Date("2026-06-01T10:00:00Z");
 const JUN_2 = new Date("2026-06-02T11:00:00Z");
 
 describe("digest assembly", () => {
   it("batches undelivered events into one ordered digest and is idempotent", async () => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await ingestCandidates(sql, [
       candidate({}),
       candidate({
@@ -146,7 +158,7 @@ describe("digest assembly", () => {
   });
 
   it("filters by the subscription's taxonomies and significance floor", async () => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await sql`
       update subscription set taxonomies = ${["css"]}, significance_floor = 0.5
       where subscriber_id = ${subscriberId}
@@ -182,7 +194,7 @@ describe("digest assembly", () => {
   });
 
   it("a subscription without taxonomies matches every theme", async () => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await ingestCandidates(sql, [
       candidate({}),
       candidate({
@@ -201,7 +213,7 @@ describe("digest assembly", () => {
   });
 
   it("only includes events not already delivered", async () => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await ingestCandidates(sql, [candidate({})]);
     await observedAt("web-features:baseline:lh:low->high", JUN_1);
     await assembleDigest(sql, subscriberId, JUN_2);
@@ -242,7 +254,7 @@ describe("cadence windows (§9)", () => {
     });
 
   it("an open window is never cut early", async () => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await ingestCandidates(sql, [candidate({})]);
     await observedAt("web-features:baseline:lh:low->high", JUN_1);
 
@@ -251,7 +263,7 @@ describe("cadence windows (§9)", () => {
   });
 
   it("daily windows chain, cutting one digest per elapsed window", async () => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await ingestCandidates(sql, [candidate({}), container()]);
     await observedAt("web-features:baseline:lh:low->high", JUN_1);
     await observedAt(
@@ -278,7 +290,7 @@ describe("cadence windows (§9)", () => {
   });
 
   it("a weekly cadence spans seven days", async () => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await sql`update subscription set cadence = 'weekly' where subscriber_id = ${subscriberId}`;
     await ingestCandidates(sql, [candidate({}), container()]);
     await observedAt("web-features:baseline:lh:low->high", JUN_1);
@@ -296,7 +308,7 @@ describe("cadence windows (§9)", () => {
   });
 
   it("elapsed windows with nothing matched are skipped without a digest", async () => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await ingestCandidates(sql, [candidate({})]);
     await observedAt("web-features:baseline:lh:low->high", JUN_1);
     await assembleDigest(sql, subscriberId, JUN_2);
@@ -317,7 +329,7 @@ describe("cadence windows (§9)", () => {
 
 describe("delivery records (§10)", () => {
   const assembleOne = async (): Promise<string> => {
-    const subscriberId = await ensureOperator(sql, "operator@example.com");
+    const subscriberId = await ensureEarlyOperator();
     await ingestCandidates(sql, [candidate({})]);
     await observedAt("web-features:baseline:lh:low->high", JUN_1);
     const digestId = await assembleDigest(sql, subscriberId, JUN_2);

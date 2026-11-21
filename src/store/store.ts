@@ -161,6 +161,20 @@ export const ensureOperator = async (sql: Sql, email: string): Promise<string> =
 };
 
 /**
+ * Subscribers a pipeline run assembles digests for: confirmed and not
+ * unsubscribed. Oldest first, with the id as a tie-break, so the operator
+ * (created first) goes first and the order is the same on every run.
+ */
+export const activeSubscriberIds = async (sql: Queryable): Promise<string[]> => {
+  const rows = await sql<{ id: string }[]>`
+    select id from subscriber
+    where confirmed_at is not null and unsubscribed_at is null
+    order by created_at, id
+  `;
+  return rows.map((row) => row.id);
+};
+
+/**
  * The public signup write path (§17). Calls the same `request_subscription`
  * function the browser reaches through PostgREST, so the Node tests and the
  * reader exercise one implementation. It queues a confirmation for a new or
@@ -274,6 +288,15 @@ const CADENCE_PERIOD_MS: Record<string, number> = {
  * An event matches when it clears the subscription's significance floor
  * and, if the subscription names taxonomies, shares one. Callers loop
  * until null to catch up across multiple elapsed windows.
+ *
+ * A subscriber's first window starts no earlier than their `confirmed_at`.
+ * Without that, someone who confirms today against months of stored events
+ * would get one digest per elapsed day of history, all in one run. Later
+ * windows chain from the previous digest's window_end. The bound also applies
+ * when that window_end is earlier than `confirmed_at`: the subscriber left and
+ * confirmed again, and chaining across the gap would flood them with its
+ * history. Continuous subscribers have a `confirmed_at` older than their last
+ * window_end, so nothing changes for them.
  */
 export const assembleDigest = async (
   sql: Sql,
@@ -287,6 +310,12 @@ export const assembleDigest = async (
       select cadence, taxonomies, significance_floor
       from subscription where subscriber_id = ${subscriberId} limit 1
     `;
+    const confirmation = await tx<{ confirmed_at: Date | null }[]>`
+      select confirmed_at from subscriber where id = ${subscriberId}
+    `;
+    const confirmedAt = confirmation[0]?.confirmed_at ?? null;
+    // An unconfirmed subscriber has no first window to open.
+    if (confirmedAt === null) return null;
     const cadence = subscription[0]?.cadence ?? "daily";
     const taxonomies = subscription[0]?.taxonomies ?? [];
     const floor = subscription[0]?.significance_floor ?? 0;
@@ -306,10 +335,13 @@ export const assembleDigest = async (
       select max(window_end) as window_end from digest where subscriber_id = ${subscriberId}
     `;
     let windowStart: Date | null = previous[0]?.window_end ?? null;
+    // A previous digest that ends before the current confirmation belongs to
+    // an earlier subscription (they left and confirmed again), so start afresh.
+    if (windowStart !== null && windowStart.getTime() < confirmedAt.getTime()) windowStart = null;
     if (windowStart === null) {
       const earliest = await tx<{ first_observed_at: Date }[]>`
         select first_observed_at from change_event
-        where ${matches()}
+        where ${matches()} and first_observed_at >= ${confirmedAt}
         order by first_observed_at limit 1
       `;
       windowStart = earliest[0]?.first_observed_at ?? null;
@@ -411,6 +443,7 @@ export const digestsAwaitingDelivery = async (
     from digest d
     join subscriber s on s.id = d.subscriber_id
     where s.unsubscribed_at is null
+      and s.confirmed_at is not null
       and not exists (
       select 1 from delivery dv
       where dv.digest_id = d.id and dv.channel = ${channelId} and dv.status = 'sent'
