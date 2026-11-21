@@ -10,10 +10,13 @@
     "prepare": "vp config",
     "pulse": "bun run src/cli/index.ts",
     "db:up": "bun run scripts/db-up.ts",
+    "dev:reader": "bun run scripts/dev-reader.ts",
     "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "knip": "knip"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "fast-xml-parser": "^5.10.1",
     "nodemailer": "^9",
     "postgres": "^3.4.9",

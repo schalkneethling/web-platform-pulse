@@ -1,0 +1,20 @@
+{
+  // Slice F.5 (§6): the reader deployed as a Worker serving static assets.
+  //
+  // Cloudflare's current guidance is to use Workers rather than Pages for a
+  // new static project -- Pages still works, but new features are going to
+  // Workers, and a Pages project has to be created interactively before CI
+  // can deploy to it at all.
+  //
+  // There is no `main`: this Worker is only assets, so it carries no script
+  // and no ASSETS binding (a binding is only valid alongside a script).
+  "name": "web-platform-pulse",
+  "compatibility_date": "2026-08-20",
+  "assets": {
+    "directory": "./dist/",
+    // Pages inferred this; Workers requires it to be explicit. The reader is
+    // a single-page app, so an unknown path serves index.html rather than a
+    // 404, and client-side routing keeps working on a hard refresh.
+    "not_found_handling": "single-page-application",
+  },
+}

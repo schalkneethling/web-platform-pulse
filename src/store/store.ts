@@ -170,7 +170,8 @@ const eventsWithProvenance = async (
       { source_id: string; url: string; title: string; observed_at: Date; raw_ref: string | null }[]
     >`
       select source_id, url, title, observed_at, raw_ref
-      from event_source where event_id = ${row.id} order by observed_at, url
+      from event_source where event_id = ${row.id}
+      order by observed_at, url collate "C"
     `;
     events.push(
       rowToEvent(
@@ -276,16 +277,6 @@ export const assembleDigest = async (
       return digestId;
     }
   });
-};
-
-/** The operator is the earliest confirmed subscriber; the reader renders their digest. */
-export const findOperator = async (sql: Sql): Promise<string | null> => {
-  const rows = await sql<{ id: string }[]>`
-    select id from subscriber
-    where confirmed_at is not null and unsubscribed_at is null
-    order by created_at limit 1
-  `;
-  return rows[0]?.id ?? null;
 };
 
 interface DigestRow {

@@ -31,9 +31,20 @@ instrument; this slice is about presentation.
 
 ## Slice F — Reader SPA deployment and multi-subscriber
 
-Parked until the digest is shared beyond the operator: replace the
-`digestApi` Vite plugin with Supabase reads + RLS, deploy the SPA
-(Cloudflare Pages or Vercel), and lift the single-email `ensureOperator`.
+The deployment half is done: the `digestApi` Vite plugin is gone, the reader
+reads through PostgREST with the anon key, every table carries RLS, and the
+SPA deploys to Cloudflare Workers static assets on each push to `main`.
+Cloudflare now steers new static projects to Workers rather than Pages, so
+that is where it went.
+
+What remains is the multi-subscriber half, and it is a prerequisite for
+sharing the reader rather than a follow-up. The anon role cannot read
+`subscriber`, so the reader cannot resolve _whose_ digest to show — it asks
+for the most recent one that exists. With a single confirmed subscriber that
+is the operator's by construction; with two it is whoever ran last. The read
+policies are `using (true)` for the same reason, and become `auth.uid()`
+predicates once there is an identity to key on. So: public signup and
+confirmation (#62, #63), then identity (#65), before the URL goes to anyone.
 
 ## Slice G — The weekly issue: curate, annotate, publish
 

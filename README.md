@@ -57,8 +57,14 @@ vp install                 # install dependencies
 vp run db:up               # disposable Postgres in Docker, migrations applied
 vp run pulse -- --data tests/fixtures/web-features/old.json   # seed the cursor
 vp run pulse -- --data tests/fixtures/web-features/new.json   # emit a digest
-vp dev                     # reader at http://localhost:5173
+vp run dev:reader          # reader at http://localhost:5173
 ```
+
+The reader reads through PostgREST with an anon key rather than through the
+dev server, so `vp run dev:reader` is the entry point: it brings up a local
+PostgREST over the same Postgres and passes `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` to `vp dev`. Plain `vp dev` still serves the app,
+but without those two the page can only render its error state.
 
 The pipeline CLI (`vp run pulse`) pulls live data when run without flags.
 Useful flags and environment variables:
@@ -89,6 +95,10 @@ vp run test:e2e   # Playwright against the seeded reader
 Integration tests deliver real email into [Mailpit](https://mailpit.axllent.org)
 (`smtp://localhost:54330`, UI on `http://localhost:54331`) and assert on its API.
 
+The e2e run adds a PostgREST container (`http://localhost:54332`) so the
+browser exercises the same client, the same anon role and the same
+row-level-security policies the deployed reader will.
+
 ## Deployment (prototype)
 
 The prototype runs on free tiers end to end — see `NEXT_STEPS.md` for the full
@@ -99,9 +109,20 @@ walkthrough and what comes next.
   `smtps://` scheme matters — port 465 expects TLS from the first byte).
 - **GitHub Actions** (`.github/workflows/pulse.yml`) runs the pipeline daily at
   07:00 UTC, with `workflow_dispatch` for manual runs.
+- **Cloudflare Workers** hosts the reader as static assets (`wrangler.jsonc`),
+  deployed by `.github/workflows/deploy.yml` on every push to `main`.
 
 Repository secrets: `DATABASE_URL`, `PULSE_SMTP_URL`, `PULSE_SUBSCRIBER_EMAIL`,
-`PULSE_EMAIL_FROM`.
+`PULSE_EMAIL_FROM`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+
+The two `VITE_` values are compiled into the bundle and are public by design:
+the anon key selects a Postgres role, and `supabase/migrations/` is what
+decides what that role may read. The Cloudflare API token needs only the
+"Edit Cloudflare Workers" permission.
+
+The reader shows the most recent digest to anyone who visits. That is
+acceptable only while the deployment is single-tenant — see `NEXT_STEPS.md`.
 
 ## Project layout
 
