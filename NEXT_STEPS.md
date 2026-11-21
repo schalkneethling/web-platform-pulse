@@ -18,7 +18,7 @@ aggregating the WebKit, Igalia, Mozilla Hacks, W3C, and WHATWG blogs
 The slices below are roughly in priority order. Slice G — the weekly
 editorial issue — is the destination the others now serve: D keeps an issue
 readable, F is what a curation surface is built on, and E is the polish that
-can follow publication rather than precede it. D and F are done, so: G, then E.
+can follow publication rather than precede it. D, F and G are done, so: E.
 
 ---
 
@@ -77,68 +77,57 @@ What Slice F deliberately leaves out:
 
 ## Slice G — The weekly issue: curate, annotate, publish
 
-The daily digest is a monitoring tool for the operator. The weekly issue is
-the product: one editorial artifact, written once and sent to everyone, whose
-value is the sentence a human adds to each item rather than the item itself.
-The pipeline already finds and ranks everything; this slice is the layer
-where a person decides what matters and says why.
+Done. The daily digest is a monitoring tool for the operator; the weekly issue
+is the product: one editorial artifact, written once and sent to everyone,
+whose value is the sentence a human adds to each item rather than the item
+itself.
 
-**What already exists.** `subscription.cadence` accepts `'weekly'` and
-`CADENCE_PERIOD_MS` in `src/store/store.ts` chains seven-day windows, covered
-by `tests/integration/store.test.ts`. So a weekly _window_ is solved. What is
-missing is issue _identity_ and _editorial intent_ — `digest` and
-`digest_item` are per-subscriber machine output with a `position` and nothing
-else, which is the wrong shape for something one person writes and many
-people read.
+A new pair of tables, `issue` and `issue_item`, sits beside `digest` instead
+of replacing it, and `change_event` is never written by any of it, so a
+pipeline re-run cannot disturb a draft. Three commands run the week:
+`vp run pulse issue open` cuts the draft for the elapsed week (or reports the
+open one) and pre-fills it with the top twelve events; `issue preview` mails
+the draft, marked as a preview, to the operator; `issue publish` flips the
+status and mails every confirmed subscriber once, retrying only the sends that
+failed. `.github/workflows/issue.yml` runs `open` every Sunday at 06:00 UTC
+and offers all three by hand. Curation happens at `/curate` in the reader: the
+operator signs in with Google (Supabase Auth), and the database decides who
+that is (`is_operator_request()`, migration 10), so the page holds no access
+rule of its own. An issue with no note on any included item is flagged on the
+console by `open` and `publish`, and by a banner in the preview email.
 
-**The shape.** A new pair of tables alongside `digest`, not replacing it:
+What Slice G deliberately leaves out:
 
-- `issue` — `number`, `title`, `intro`, `status` (`draft` | `published`),
-  `window_start`, `window_end`, `published_at`. Not per-subscriber: one row
-  is one Monday morning email. `number` is `unique`, so a second `open` for
-  the same week collides instead of cutting a rival draft.
-- `issue_item` — `issue_id`, `event_id`, `position`, `section`, and `note`,
-  the editorial annotation. Same constraint shape as `digest_item`:
-  `issue_id references issue(id) on delete cascade`, `event_id references
-change_event(id)`, and `unique (issue_id, event_id)` plus `unique
-(issue_id, position)` so a re-run of `open` can't double-insert an item or
-  leave two items fighting over one slot. The `note` is the whole point; an
-  issue whose items are all un-annotated is a changelog and should read as a
-  warning.
-
-`change_event` stays untouched — curation is a selection over it, never a
-mutation of it, so a re-run of the pipeline can never disturb a draft.
-
-**The curation surface.** Extend the reader SPA (`src/reader/`) with an
-operator view over the open window: the week's `change_event` rows sorted by
-`significance`, each with include/exclude and a note field. This is the piece
-that makes Slice F a prerequisite rather than a nice-to-have — the view needs
-real Supabase reads and an authenticated operator, not the `digestApi` Vite
-plugin. Curating from the daily _emails_ is the thing to avoid: it re-does
-selection work against a lossy copy of the database.
-
-**The commands.** Extend `src/cli/index.ts` (`vp run pulse`) with issue
-subcommands rather than a second binary:
-
-- `open` — cut a draft `issue` for the elapsed week and pre-fill `issue_item`
-  from the top-ranked events, as a starting point to edit down.
-- `preview` — render the draft through the email template to Mailpit, so the
-  Sunday read-through happens in the real artifact.
-- `publish` — flip `status`, stamp `published_at`, and fan out to confirmed
-  subscribers. Idempotent the same way the daily send is: a `delivery`-shaped
-  record per (issue, subscriber, channel) written before the provider call,
-  with a partial unique index on the sent rows, so publishing twice — or
-  resuming after a crash mid-fan-out — sends once and only retries what
-  failed.
-
-**Deliberately deferred.** Per-subscriber filtering (`taxonomies`,
-`significance_floor`) does not apply to the issue — it is one hand-written
-artifact, and filtering it per reader would gut the editorial voice. Those
-settings stay meaningful for the daily digest only.
-
-**The bar for done.** A skip week is survivable; silence is not. `open`
-should be cheap enough to run every week even when the honest output is a
-short issue.
+- **Reordering items within a section.** Items render by section, then
+  `position`. Including an event appends it at the end of the positions, and
+  nothing in the page or the functions moves one.
+- **A public archive of published issues.** `anon` has no grant on the issue
+  tables, so a published issue exists only in subscribers' inboxes and to the
+  operator's session.
+- **Publishing from the browser.** `preview` and `publish` are commands only.
+  The page edits a draft and does not send mail.
+- **A per-subscriber reader view and a settings page.** The same Google sign-in
+  now makes both possible, but the `authenticated` role has policies only for
+  the operator's curation tables, so a subscriber who signs in sees nothing.
+  Both still need `auth.uid()` predicates and a mapping from an auth user to a
+  `subscriber` row.
+- **Retrying an older issue's failed sends once a newer issue is published.**
+  `publish` fans out only the most recently published issue, so a subscriber
+  whose send failed five times, or failed while a newer issue went out first,
+  does not receive the older one later.
+- **Exactly-once delivery when a run dies mid-send.** Each email is sent
+  before its `issue_delivery` row is written, so a crash between the provider
+  accepting a message and the row being written mails that subscriber again on
+  the next run. The other order would turn the same crash into a subscriber
+  who never receives the issue.
+- **Signing in on a local machine.** The local stack is Postgres and PostgREST
+  with no Supabase Auth server, so "Sign in with Google" works only against a
+  real project. The browser tests sign in by storing a session minted with the
+  local secret.
+- **Re-sorting the list while it is being edited.** The page orders events
+  once, when it loads (included first), and an event keeps its place when it is
+  included or excluded, so keyboard focus does not move under the operator.
+  The next load shows the included events first.
 
 ---
 
