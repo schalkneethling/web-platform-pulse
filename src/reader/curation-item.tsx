@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SECTION_LABELS, SECTION_ORDER, sectionFor, type Section } from "../core/issue.ts";
 import { sourceName } from "../core/provenance.ts";
 import { excludeEvent, includeEvent, saveNote, type CurationEvent } from "./issue-source.ts";
@@ -20,6 +20,8 @@ interface CurationItemProps {
   entry: CurationEvent;
   /** Called after a write succeeded, with what the database now holds. */
   onSaved: (eventId: string, saved: SavedItem) => void;
+  /** Called when this item gains or loses changes that are not saved yet. */
+  onPending: (eventId: string, pending: boolean) => void;
 }
 
 /**
@@ -32,13 +34,25 @@ interface CurationItemProps {
  * turn comes. Neither the row nor its controls are ever remounted by a save,
  * so keyboard focus stays on the control that was edited.
  */
-export const CurationItem = ({ issueId, entry, onSaved }: CurationItemProps) => {
+export const CurationItem = ({ issueId, entry, onSaved, onPending }: CurationItemProps) => {
   const { event } = entry;
   const [included, setIncluded] = useState(entry.included);
   const [section, setSection] = useState<Section>(entry.section);
   const [note, setNote] = useState(entry.note);
   const [savedNote, setSavedNote] = useState(entry.note.trim());
+  const [savedSection, setSavedSection] = useState<Section>(entry.section);
   const { status, save } = useSaver();
+
+  // Changes that would be lost by leaving: a write in flight, or text on
+  // screen that differs from what is saved. The text only counts while it is
+  // visible, because an excluded item has no note or section field to look at.
+  const pending =
+    status.kind === "saving" ||
+    (included && (note.trim() !== savedNote || section !== savedSection));
+  useEffect(() => {
+    onPending(event.id, pending);
+    return () => onPending(event.id, false);
+  }, [pending]);
 
   const wanted = useRef({ included: entry.included, section: entry.section, note: entry.note });
   const saved = useRef({
@@ -69,12 +83,16 @@ export const CurationItem = ({ issueId, entry, onSaved }: CurationItemProps) => 
           if (target && !saved.current.hasRow) {
             saved.current.hasRow = true;
             saved.current.section = sectionFor(event, false);
+            setSavedSection(saved.current.section);
           }
           onSaved(event.id, { included: target, note: saved.current.note });
         } else {
           // The checkbox must not claim a state the database does not hold.
           wanted.current.included = saved.current.included;
           setIncluded(saved.current.included);
+          // Said in the status too: this failure put the checkbox back, which
+          // is not what "what you typed is still here" would tell the person.
+          return { ...result, reverted: true };
         }
         return result;
       };
@@ -104,7 +122,10 @@ export const CurationItem = ({ issueId, entry, onSaved }: CurationItemProps) => 
             saved.current.note = text.trim();
             setSavedNote(saved.current.note);
           }
-          if (sectionChanged) saved.current.section = target;
+          if (sectionChanged) {
+            saved.current.section = target;
+            setSavedSection(target);
+          }
           onSaved(event.id, { included: saved.current.included, note: saved.current.note });
         }
         return result;

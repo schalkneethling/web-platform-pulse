@@ -206,11 +206,16 @@ the account, so the operator can link it (see the one-time setup below). Until
 address changes, the pipeline moves the operator flag and the link is cleared
 with it, so the new operator is unlinked until `operator link` runs again.
 
-The page lists the draft's window, included events first. Each event has an
-Include checkbox and, once included, a section and a note. Changes save as you
-make them: the checkbox and the section on change, the note, title and intro
-when the field loses focus and its text has changed. Each item says "Saved." or
-why it was not saved, and keeps what you typed when a save fails. The page
+The page lists the draft's window, included events first, with its dates in
+UTC, the way the digest email writes them. Each event has an Include checkbox
+and, once included, a section and a note. Changes save as you make them: the
+checkbox and the section on change, the note, title and intro when the field
+loses focus and its text has changed. Each save sends only the field that
+changed, so a page left open in another tab cannot overwrite the field next to
+it with a stale value. Each item says "Saved." or why it was not saved: a failed
+note or heading keeps what you typed, and a failed include or exclude puts the
+checkbox back and says so. While any field has text that is not saved, or a
+save in flight, the browser asks before you close or leave the page. The page
 shows the first 50 events that are not in the issue and a "Show 50 more"
 button for the rest.
 

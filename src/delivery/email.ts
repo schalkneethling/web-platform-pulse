@@ -1,5 +1,6 @@
 import type { DeliveryChannel } from "../core/delivery.ts";
 import { capThemeGroup, groupByTheme, THEME_LABELS, type DigestView } from "../core/digest.ts";
+import { formatUtcDate } from "../core/dates.ts";
 import { listJoin, type SupportRollup } from "../core/support-rollup.ts";
 import type { ChangeEvent } from "../core/types.ts";
 import { unsubscribeUrl } from "./links.ts";
@@ -35,10 +36,6 @@ export const unsubscribeFooterHtml = (unsubscribeLink: string): string =>
 export const unsubscribeFooterText = (unsubscribeLink: string): string =>
   `Unsubscribe from Platform Pulse: ${unsubscribeLink}`;
 
-/** Rendered in UTC so the same digest reads the same everywhere. */
-const formatDate = (iso: string): string =>
-  new Date(iso).toLocaleDateString("en-GB", { dateStyle: "long", timeZone: "UTC" });
-
 const themeLabel = (theme: string): string => THEME_LABELS[theme] ?? theme;
 
 /** Provenance rows carry a human title ("lh unit", "Chrome Canary 152…"). */
@@ -47,7 +44,7 @@ const itemHtml = (event: ChangeEvent): string => {
     .map((p) => `<a href="${escapeHtml(p.url)}">${escapeHtml(p.title)}</a>`)
     .join(", ");
   const meta = [
-    ...(event.occurredAt === null ? [] : [`Changed on ${formatDate(event.occurredAt)}`]),
+    ...(event.occurredAt === null ? [] : [`Changed on ${formatUtcDate(event.occurredAt)}`]),
     ...(links ? [links] : []),
   ].join(" — ");
   return `    <li><strong>${escapeHtml(event.title)}</strong>${meta ? `<br />${meta}` : ""}</li>`;
@@ -56,7 +53,7 @@ const itemHtml = (event: ChangeEvent): string => {
 const itemText = (event: ChangeEvent): string =>
   [
     `- ${event.title}`,
-    ...(event.occurredAt === null ? [] : [`  Changed on ${formatDate(event.occurredAt)}`]),
+    ...(event.occurredAt === null ? [] : [`  Changed on ${formatUtcDate(event.occurredAt)}`]),
     ...event.provenance.map((p) => `  ${p.url}`),
   ].join("\n");
 
@@ -83,7 +80,7 @@ export const renderDigestEmail = (digest: DigestView, unsubscribeLink: string): 
   const count = digest.items.length;
   const noun = count === 1 ? "change" : "changes";
   const subject = `Platform Pulse — ${count} ${noun}`;
-  const window = `${formatDate(digest.windowStart)} to ${formatDate(digest.windowEnd)}`;
+  const window = `${formatUtcDate(digest.windowStart)} to ${formatUtcDate(digest.windowEnd)}`;
   const groups = groupByTheme(digest.items);
 
   const html = [

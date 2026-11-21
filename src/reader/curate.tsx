@@ -5,6 +5,18 @@ import { getCuratorClient } from "./supabase.ts";
 
 type LoadState = { status: "loading" } | { status: "error" } | CurationState;
 
+/** What the page's live region says: only the two states that have no content of their own. */
+const loadStatusText = (state: LoadState): string => {
+  switch (state.status) {
+    case "loading":
+      return "Loading…";
+    case "error":
+      return "The issue could not be loaded. Reload to try again.";
+    default:
+      return "";
+  }
+};
+
 /** Whether the curator client holds a session, or null until it has said. */
 const useSignedIn = (): boolean | null => {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -96,14 +108,13 @@ export const Curate = () => {
       <h2 className="reader__curate-title" id="curate-heading">
         Curate the weekly issue
       </h2>
-      {state.status === "loading" && (
-        <p className="reader__status" role="status">
-          Loading…
-        </p>
-      )}
-      {state.status === "error" && (
-        <p className="reader__status">The issue could not be loaded. Reload to try again.</p>
-      )}
+      {/* One live region for the whole page, present from the first render and
+          only ever given different text. A region that is inserted already
+          holding its message is not announced, so the error cannot arrive in a
+          new element. */}
+      <p className="reader__status" role="status">
+        {loadStatusText(state)}
+      </p>
       {state.status === "signed-out" && <SignIn />}
       {state.status === "not-operator" && (
         <>

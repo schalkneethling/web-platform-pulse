@@ -6,13 +6,45 @@ export type SaveStatus =
   | { kind: "idle" }
   | { kind: "saving" }
   | { kind: "saved" }
-  | { kind: "failed"; message: string };
+  | {
+      kind: "failed";
+      message: string;
+      /**
+       * True when the failed write was a checkbox, which the page puts back to
+       * what is saved. False when the person's typing is still on screen.
+       */
+      reverted: boolean;
+    };
+
+/** A write's outcome, plus whether the page undid the change it was making. */
+export type SaveResult = WriteResult & { reverted?: boolean };
+
+/**
+ * What a status line says. The two failures are told apart because what the
+ * person must do differs: after a failed note, their text is still there to
+ * save again; after a failed include or exclude, the checkbox has gone back
+ * and nothing they typed is involved. The words "Not saved" carry the failure.
+ */
+export const saveStatusText = (status: SaveStatus): string => {
+  switch (status.kind) {
+    case "idle":
+      return "";
+    case "saving":
+      return "Saving…";
+    case "saved":
+      return "Saved.";
+    case "failed":
+      return status.reverted
+        ? `Not saved: ${status.message} The checkbox is back to what is saved.`
+        : `Not saved: ${status.message} What you typed is still here.`;
+  }
+};
 
 /**
  * Decides, at the moment its turn comes, what to write. It returns the write,
  * or null when the values on screen are already the saved ones.
  */
-export type SavePlan = () => (() => Promise<WriteResult>) | null;
+export type SavePlan = () => (() => Promise<SaveResult>) | null;
 
 /**
  * Runs the writes of one group of fields one at a time, in the order they were
@@ -35,7 +67,11 @@ export const useSaver = () => {
       if (!write) return;
       setStatus({ kind: "saving" });
       const result = await write();
-      setStatus(result.ok ? { kind: "saved" } : { kind: "failed", message: result.message });
+      setStatus(
+        result.ok
+          ? { kind: "saved" }
+          : { kind: "failed", message: result.message, reverted: result.reverted ?? false },
+      );
     });
   };
 
