@@ -6,6 +6,7 @@ import {
   type DigestView,
   type ThemeUnit,
 } from "../core/digest.ts";
+import { sourceName } from "../core/provenance.ts";
 import type { SupportRollup } from "../core/support-rollup.ts";
 import type { ChangeEvent } from "../core/types.ts";
 
@@ -24,7 +25,7 @@ const DigestItem = ({ item }: { item: ChangeEvent }) => (
       {item.provenance.map((source) => (
         <li key={source.url}>
           <a className="digest-item__source-link" href={source.url}>
-            {new URL(source.url).host}
+            {sourceName(source.url) ?? source.url}
           </a>
         </li>
       ))}

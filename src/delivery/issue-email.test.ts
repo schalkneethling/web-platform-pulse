@@ -90,8 +90,12 @@ describe("renderIssueEmail", () => {
     ]);
     expect(html).toContain('<a href="https://example.com/first">Grid thing</a>');
     expect(html).not.toContain("https://example.com/second");
-    expect(html).toContain("web-features");
+    // The source is the host a reader sees in the digest, not the adapter's machine id.
+    expect(html).toContain("— example.com</span>");
+    expect(html).not.toContain("web-features");
     expect(text).toContain("https://example.com/first");
+    expect(text).toContain("Source: example.com");
+    expect(text).not.toContain("web-features");
   });
 
   it("styles the lead section larger through a class and inline style", () => {
@@ -160,6 +164,19 @@ describe("renderIssueEmail", () => {
     });
     expect(annotated.html).not.toContain("issue-preview-banner");
     expect(annotated.subject).toBe("[Preview] Platform Pulse #4: Anchor positioning lands");
+  });
+
+  it("prefixes the subject in every preview and never in the sent issue", () => {
+    const heading = "Platform Pulse #4: Anchor positioning lands";
+    const cases: [string, IssueItemView[]][] = [
+      ["no items", []],
+      ["an un-annotated item", [item("A", "shipped")]],
+      ["an annotated item", [item("A", "shipped", { note: "Why it matters." })]],
+    ];
+    for (const [, items] of cases) {
+      expect(render(items, { preview: true }).subject).toBe(`[Preview] ${heading}`);
+      expect(render(items).subject).toBe(heading);
+    }
   });
 
   it("carries the unsubscribe link in both bodies", () => {
