@@ -64,13 +64,13 @@ What Slice F deliberately leaves out:
   crowd out real signups. Cloudflare
   Turnstile needs a server to verify the token, which means giving the Worker
   a script; do that before the form gets real traffic.
-- **Supabase's default privileges on new functions.** Supabase grants
-  `anon` and `authenticated` execute on every function created in `public`,
-  directly, so migration 4's revoke from PUBLIC does not cover a function
-  added later. The four that exist are meant to be public. Any future
-  `security definer` helper must revoke from those two roles by name, and the
-  local tests cannot catch a miss because the local roles have no such
-  defaults.
+- **Function privileges depend on the Supabase project's defaults.** Checked
+  against production when migrations 4 to 8 were applied (2026-11-21): this
+  project does not hand `anon` or `authenticated` execute on new functions
+  in `public`, so the four that `anon` can call are callable only through
+  their explicit grants. Older Supabase projects grant it by default, and
+  the local database cannot show the difference, so re-check with
+  `has_function_privilege` after adding a `security definer` helper.
 - **One-click unsubscribe (RFC 8058).** Mail clients POST to the unsubscribe
   URL without the `apikey` header PostgREST requires, so the header points at
   the reader's page instead. The same Worker script would fix it.
