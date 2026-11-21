@@ -27,6 +27,13 @@ export const escapeHtml = (value: string): string =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+/** The footer every Platform Pulse email ends with, in HTML and plain text. */
+export const unsubscribeFooterHtml = (unsubscribeLink: string): string =>
+  `  <p><a href="${escapeHtml(unsubscribeLink)}">Unsubscribe</a> from Platform Pulse.</p>`;
+
+export const unsubscribeFooterText = (unsubscribeLink: string): string =>
+  `Unsubscribe from Platform Pulse: ${unsubscribeLink}`;
+
 /** Rendered in UTC so the same digest reads the same everywhere. */
 const formatDate = (iso: string): string =>
   new Date(iso).toLocaleDateString("en-GB", { dateStyle: "long", timeZone: "UTC" });
@@ -94,7 +101,7 @@ export const renderDigestEmail = (digest: DigestView, unsubscribeLink: string): 
         ...(hidden.length > 0 ? [`  <p>+${hidden.length} more</p>`] : []),
       ];
     }),
-    `  <p><a href="${escapeHtml(unsubscribeLink)}">Unsubscribe</a> from Platform Pulse.</p>`,
+    unsubscribeFooterHtml(unsubscribeLink),
   ].join("\n");
 
   const text = [
@@ -114,7 +121,7 @@ export const renderDigestEmail = (digest: DigestView, unsubscribeLink: string): 
       ];
     }),
     "",
-    `Unsubscribe from Platform Pulse: ${unsubscribeLink}`,
+    unsubscribeFooterText(unsubscribeLink),
   ].join("\n");
 
   return { subject, text, html };

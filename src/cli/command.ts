@@ -25,9 +25,10 @@ export type Command =
   | { kind: "pipeline" }
   | { kind: "confirmations" }
   | { kind: "issue-open" }
+  | { kind: "issue-preview" }
   | { kind: "unknown"; message: string };
 
-const VALID_COMMANDS = '"confirmations" and "issue open"';
+const VALID_COMMANDS = '"confirmations", "issue open" and "issue preview"';
 
 /**
  * Maps the positional arguments to a command without touching the environment,
@@ -40,6 +41,9 @@ export const resolveCommand = (positionals: string[]): Command => {
   if (subcommand === "confirmations" && extra.length === 0) return { kind: "confirmations" };
   if (subcommand === "issue" && extra.length === 1 && extra[0] === "open") {
     return { kind: "issue-open" };
+  }
+  if (subcommand === "issue" && extra.length === 1 && extra[0] === "preview") {
+    return { kind: "issue-preview" };
   }
   return {
     kind: "unknown",
