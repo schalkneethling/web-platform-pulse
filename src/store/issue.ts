@@ -141,3 +141,46 @@ export const getDraftIssue = async (sql: Sql): Promise<IssueView | null> => {
   `;
   return issues[0] ? issueView(sql, issues[0]) : null;
 };
+
+/**
+ * Curation writes. The rules (draft only, window membership, trimming, caps)
+ * live in the SQL functions from migration 10 so the CLI, the tests and the
+ * browser share one implementation; these wrappers only call them. Each takes
+ * a `Queryable` so a caller can run it inside a transaction.
+ */
+export const includeEvent = async (
+  sql: Queryable,
+  issueId: string,
+  eventId: string,
+): Promise<void> => {
+  await sql`select public.issue_include_event(${issueId}::uuid, ${eventId}::uuid)`;
+};
+
+export const excludeEvent = async (
+  sql: Queryable,
+  issueId: string,
+  eventId: string,
+): Promise<void> => {
+  await sql`select public.issue_exclude_event(${issueId}::uuid, ${eventId}::uuid)`;
+};
+
+export const annotateItem = async (
+  sql: Queryable,
+  issueId: string,
+  eventId: string,
+  note: string | null,
+  section: Section,
+): Promise<void> => {
+  await sql`
+    select public.issue_annotate_item(${issueId}::uuid, ${eventId}::uuid, ${note}::text, ${section}::text)
+  `;
+};
+
+export const setHeading = async (
+  sql: Queryable,
+  issueId: string,
+  title: string,
+  intro: string,
+): Promise<void> => {
+  await sql`select public.issue_set_heading(${issueId}::uuid, ${title}::text, ${intro}::text)`;
+};

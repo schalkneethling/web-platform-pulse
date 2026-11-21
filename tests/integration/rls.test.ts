@@ -6,6 +6,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import type { CandidateEvent } from "../../src/core/types.ts";
 import { type Queryable, connect } from "../../src/store/db.ts";
+import { annotateItem, excludeEvent, includeEvent, setHeading } from "../../src/store/issue.ts";
 import {
   assembleDigest,
   confirmSubscription,
@@ -48,8 +49,34 @@ const asAnon = async <T>(query: (tx: Queryable) => Promise<T>): Promise<T> =>
     return await query(tx);
   })) as T;
 
+/**
+ * The claims PostgREST would set for a verified token, defaulting to the
+ * operator signed in with Google. Supabase writes `app_metadata`; the user
+ * edits `user_metadata`.
+ */
+const claimsFor = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  role: "authenticated",
+  email: "operator@example.com",
+  app_metadata: { provider: "google", providers: ["google"] },
+  ...overrides,
+});
+
+/**
+ * Run one query as role `authenticated` with the given claims in the
+ * transaction-local `request.jwt.claims` setting, as PostgREST does per request.
+ */
+const asAuthenticated = async <T>(
+  claims: Record<string, unknown>,
+  query: (tx: Queryable) => Promise<T>,
+): Promise<T> =>
+  (await sql.begin(async (tx) => {
+    await tx.unsafe("set local role authenticated");
+    await tx`select set_config('request.jwt.claims', ${JSON.stringify(claims)}, true)`;
+    return await query(tx);
+  })) as T;
+
 beforeEach(async () => {
-  await sql`truncate change_event, event_source, digest, digest_item, source_state, subscription, subscriber restart identity cascade`;
+  await sql`truncate issue, change_event, event_source, digest, digest_item, source_state, subscription, subscriber restart identity cascade`;
   await ensureSource(sql, "web-features", "artifact-diff");
   const subscriberId = await ensureOperator(sql, "operator@example.com");
   await ingestCandidates(sql, [candidate()]);
@@ -295,13 +322,74 @@ describe("the policy layer itself", () => {
   it("grants anon a read policy on exactly the four digest tables", async () => {
     const policies = await sql<{ tablename: string; cmd: string; roles: string[] }[]>`
       select tablename, cmd, roles::text[] from pg_policies
-      where schemaname = 'public' order by tablename
+      where schemaname = 'public' and roles @> array['anon']::name[] order by tablename
     `;
     expect(policies).toMatchObject([
       { tablename: "change_event", cmd: "SELECT", roles: ["anon"] },
       { tablename: "digest", cmd: "SELECT", roles: ["anon"] },
       { tablename: "digest_item", cmd: "SELECT", roles: ["anon"] },
       { tablename: "event_source", cmd: "SELECT", roles: ["anon"] },
+    ]);
+  });
+
+  it("grants the operator a select policy on exactly four tables, and no policy on a write", async () => {
+    const policies = await sql<{ tablename: string; cmd: string; roles: string[] }[]>`
+      select tablename, cmd, roles::text[] from pg_policies
+      where schemaname = 'public' and roles @> array['authenticated']::name[]
+      order by tablename
+    `;
+    expect(policies).toMatchObject([
+      { tablename: "change_event", cmd: "SELECT", roles: ["authenticated"] },
+      { tablename: "event_source", cmd: "SELECT", roles: ["authenticated"] },
+      { tablename: "issue", cmd: "SELECT", roles: ["authenticated"] },
+      { tablename: "issue_item", cmd: "SELECT", roles: ["authenticated"] },
+    ]);
+  });
+
+  it("gives authenticated select on four tables and no write privilege anywhere", async () => {
+    // Supabase's default privileges would hand authenticated every grant on
+    // every table; locally nothing is granted by default, so assert the end
+    // state the migrations must reach there.
+    const privileges = await sql<{ relname: string; privilege: string }[]>`
+      select c.relname, p.privilege
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      cross join (values ('select'), ('insert'), ('update'), ('delete'), ('truncate'),
+                         ('references'), ('trigger')) as p(privilege)
+      where n.nspname = 'public' and c.relkind = 'r' and c.relname <> '_migration'
+        and has_table_privilege('authenticated', c.oid, p.privilege)
+      order by c.relname, p.privilege
+    `;
+    expect(privileges).toEqual([
+      { relname: "change_event", privilege: "select" },
+      { relname: "event_source", privilege: "select" },
+      { relname: "issue", privilege: "select" },
+      { relname: "issue_item", privilege: "select" },
+    ]);
+    // No column-level grant sneaks digest.subscriber_id back in.
+    for (const table of ["digest", "subscriber", "subscription", "delivery", "issue_delivery"]) {
+      const columns = await sql<{ attname: string }[]>`
+        select a.attname from pg_attribute a
+        where a.attrelid = ${`public.${table}`}::regclass and a.attnum > 0 and not a.attisdropped
+          and has_column_privilege('authenticated', a.attrelid, a.attnum, 'select')
+      `;
+      expect(columns, table).toEqual([]);
+    }
+  });
+
+  it("leaves authenticated with exactly the four curation functions and the identity check", async () => {
+    const executable = await sql<{ proname: string }[]>`
+      select p.proname from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'execute')
+      order by p.proname
+    `;
+    expect(executable).toEqual([
+      { proname: "is_operator_request" },
+      { proname: "issue_annotate_item" },
+      { proname: "issue_exclude_event" },
+      { proname: "issue_include_event" },
+      { proname: "issue_set_heading" },
     ]);
   });
 });
@@ -312,5 +400,166 @@ describe("the pipeline owner", () => {
     expect(subscribers).toMatchObject([{ email: "operator@example.com" }]);
     const events = await sql`select count(*)::int as n from change_event`;
     expect(events).toMatchObject([{ n: 1 }]);
+  });
+});
+
+describe("the operator's curation access", () => {
+  // The identity check reads request.jwt.claims, which PostgREST fills from
+  // the verified token. These tests set the same setting by hand, so they
+  // exercise the real policies and functions without a REST layer.
+  let issueId: string;
+  let eventId: string;
+
+  beforeEach(async () => {
+    [{ id: eventId }] = await sql<{ id: string }[]>`select id from change_event limit 1`;
+    [{ id: issueId }] = await sql<{ id: string }[]>`
+      insert into issue (number, window_start, window_end)
+      values (1, now() - interval '1 day', now() + interval '1 day') returning id
+    `;
+    await includeEvent(sql, issueId, eventId);
+  });
+
+  const readable = ["issue", "issue_item", "change_event", "event_source"] as const;
+
+  it("lets the operator signed in with Google read the four tables", async () => {
+    for (const table of readable) {
+      const rows = await asAuthenticated(claimsFor(), (tx) => tx.unsafe(`select * from ${table}`));
+      expect(rows.length, table).toBe(1);
+    }
+  });
+
+  it("lets the operator call all four write functions", async () => {
+    await asAuthenticated(claimsFor(), async (tx) => {
+      await setHeading(tx, issueId, "Title", "Intro");
+      await annotateItem(tx, issueId, eventId, "A note", "lead");
+      await excludeEvent(tx, issueId, eventId);
+      await includeEvent(tx, issueId, eventId);
+    });
+    expect(await sql`select title, intro from issue`).toMatchObject([
+      { title: "Title", intro: "Intro" },
+    ]);
+    expect(await sql`select note, section, included from issue_item`).toMatchObject([
+      { note: "A note", section: "lead", included: true },
+    ]);
+  });
+
+  it("answers is_operator_request true only for the operator, and false with no token", async () => {
+    const answer = (claims: Record<string, unknown>) =>
+      asAuthenticated(
+        claims,
+        async (tx) => (await tx`select public.is_operator_request() as ok`)[0]!.ok,
+      );
+    expect(await answer(claimsFor())).toBe(true);
+    expect(await answer(claimsFor({ email: "Operator@Example.com" }))).toBe(true);
+    expect(await answer(claimsFor({ email: "other@example.com" }))).toBe(false);
+
+    const noToken = await sql.begin(async (tx) => {
+      await tx.unsafe("set local role authenticated");
+      return (await tx`select public.is_operator_request() as ok`)[0]!.ok;
+    });
+    expect(noToken).toBe(false);
+  });
+
+  // Each of these presents the operator's address but fails one other check.
+  const impostors: [string, Record<string, unknown>][] = [
+    [
+      "the operator's email without the google provider",
+      claimsFor({ app_metadata: { provider: "email", providers: ["email"] } }),
+    ],
+    ["the operator's email with no app_metadata", claimsFor({ app_metadata: undefined })],
+    ["a different email that signed in with Google", claimsFor({ email: "other@example.com" })],
+    [
+      "user_metadata that claims the operator while the email differs",
+      claimsFor({
+        email: "other@example.com",
+        user_metadata: { email: "operator@example.com", providers: ["google"] },
+      }),
+    ],
+    [
+      "user_metadata that claims the google provider",
+      claimsFor({
+        app_metadata: { provider: "email", providers: ["email"] },
+        user_metadata: { providers: ["google"] },
+      }),
+    ],
+    ["a token whose role claim is anon", claimsFor({ role: "anon" })],
+  ];
+
+  it.each(impostors)("denies %s", async (_name, claims) => {
+    for (const table of readable) {
+      expect(
+        await asAuthenticated(claims, (tx) => tx.unsafe(`select * from ${table}`)),
+        table,
+      ).toHaveLength(0);
+    }
+    const denied = /only the operator may curate an issue/;
+    await expect(
+      asAuthenticated(claims, (tx) => setHeading(tx, issueId, "Hijacked", "")),
+    ).rejects.toThrow(denied);
+    await expect(
+      asAuthenticated(claims, (tx) => annotateItem(tx, issueId, eventId, "Hijacked", "lead")),
+    ).rejects.toThrow(denied);
+    await expect(
+      asAuthenticated(claims, (tx) => excludeEvent(tx, issueId, eventId)),
+    ).rejects.toThrow(denied);
+    await expect(
+      asAuthenticated(claims, (tx) => includeEvent(tx, issueId, eventId)),
+    ).rejects.toThrow(denied);
+    expect(
+      await sql`select title, note, included from issue join issue_item on true`,
+    ).toMatchObject([{ title: "", note: null, included: true }]);
+  });
+
+  it("denies authenticated, operator or not, the tables a subscriber's data lives in", async () => {
+    for (const claims of [claimsFor(), claimsFor({ email: "other@example.com" })]) {
+      for (const table of ["subscriber", "subscription", "delivery", "issue_delivery", "digest"]) {
+        await expect(
+          asAuthenticated(claims, (tx) => tx.unsafe(`select * from ${table}`)),
+          table,
+        ).rejects.toThrow(/permission denied/i);
+      }
+      await expect(
+        asAuthenticated(claims, (tx) => tx.unsafe("select subscriber_id from digest")),
+      ).rejects.toThrow(/permission denied/i);
+      await expect(
+        asAuthenticated(claims, (tx) => tx.unsafe("select id from digest_item")),
+      ).rejects.toThrow(/permission denied/i);
+    }
+  });
+
+  it("cannot write the issue tables directly, even as the operator", async () => {
+    for (const statement of [
+      "update issue set title = 'direct'",
+      "insert into issue_item (issue_id, event_id, position, section) select id, (select id from change_event limit 1), 99, 'lead' from issue",
+      "delete from issue_item",
+      "update change_event set title = 'direct'",
+    ]) {
+      await expect(
+        asAuthenticated(claimsFor(), (tx) => tx.unsafe(statement)),
+        statement,
+      ).rejects.toThrow(/permission denied/i);
+    }
+  });
+
+  it("denies anon the issue tables, issue_delivery and every curation function", async () => {
+    for (const table of ["issue", "issue_item", "issue_delivery"]) {
+      await expect(
+        asAnon((tx) => tx.unsafe(`select * from ${table}`)),
+        table,
+      ).rejects.toThrow(/permission denied/i);
+    }
+    await expect(asAnon((tx) => setHeading(tx, issueId, "anon", ""))).rejects.toThrow(
+      /permission denied/i,
+    );
+    await expect(asAnon((tx) => includeEvent(tx, issueId, eventId))).rejects.toThrow(
+      /permission denied/i,
+    );
+    await expect(asAnon((tx) => tx`select public.is_operator_request()`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("lets only the table owner read issue_delivery", async () => {
+    expect(await sql`select count(*)::int as n from issue_delivery`).toMatchObject([{ n: 0 }]);
   });
 });
