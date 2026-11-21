@@ -350,6 +350,20 @@ describe("delivery records (§10)", () => {
     expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
   });
 
+  it("stops offering a digest after five failed attempts on that channel", async () => {
+    const digestId = await assembleOne();
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      await recordDelivery(sql, digestId, "email", { status: "failed", error: "ECONNREFUSED" });
+    }
+    expect(await digestsAwaitingDelivery(sql, "email")).toHaveLength(1);
+
+    await recordDelivery(sql, digestId, "email", { status: "failed", error: "ECONNREFUSED" });
+
+    expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
+    // The limit is per channel: another channel has not failed yet.
+    expect(await digestsAwaitingDelivery(sql, "other")).toHaveLength(1);
+  });
+
   it("a failed attempt keeps the digest awaiting, with the error on record", async () => {
     const digestId = await assembleOne();
     await recordDelivery(sql, digestId, "email", { status: "failed", error: "ECONNREFUSED" });

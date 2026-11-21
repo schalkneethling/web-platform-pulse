@@ -9,6 +9,10 @@
 //   vp run pulse -- --tag-reviews tests/fixtures/tag-reviews/new.json
 //   vp run pulse -- --voices tests/fixtures/voices/new.json
 //   vp run pulse -- --smtp smtp://localhost:54330   (or PULSE_SMTP_URL)
+//   vp run pulse -- --email you@example.com   (or PULSE_SUBSCRIBER_EMAIL)
+//       names the operator, and one of the two is required. The operator's
+//       digest is what the public reader shows, so passing a different address
+//       moves the operator flag and re-points the reader at that subscriber.
 //   vp run pulse confirmations   only send pending signup confirmations, then exit
 //
 // With no subcommand the run is the pipeline, followed by any pending signup
@@ -116,8 +120,17 @@ const adapters = [
   createVoicesAdapter({ fetchPosts }),
 ];
 
-const subscriberEmail =
-  values.email ?? process.env.PULSE_SUBSCRIBER_EMAIL ?? "operator@example.com";
+// No fallback address: ensureOperator moves the operator flag to whatever
+// address it is given, so a guessed default would silently re-point the public
+// reader at a stranger's digest.
+const subscriberEmail = values.email ?? process.env.PULSE_SUBSCRIBER_EMAIL;
+if (!subscriberEmail) {
+  console.error(
+    "The operator address is required: set PULSE_SUBSCRIBER_EMAIL or pass --email. " +
+      "It names the operator whose digest the public reader shows.",
+  );
+  process.exit(2);
+}
 
 // Email is opt-in for the prototype: no SMTP configured means the reader
 // channel (the persisted digest) is the only delivery.
@@ -186,7 +199,10 @@ try {
       from: emailFrom,
       publicUrl,
     });
-    console.log(`confirmations: ${confirmations.sent} sent, ${confirmations.failed} failed`);
+    console.log(
+      `confirmations: ${confirmations.sent} sent, ${confirmations.failed} failed, ` +
+        `${confirmations.cleaned} stale signups removed`,
+    );
     if (confirmations.failed > 0) process.exitCode = 1;
   }
 } finally {

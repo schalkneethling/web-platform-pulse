@@ -100,4 +100,44 @@ describe("operator identity", () => {
       sql`update subscriber set is_operator = true where id = ${otherId}`,
     ).rejects.toThrow(/subscriber_one_operator_idx/);
   });
+
+  it("promotes a pending, unconfirmed public subscriber and confirms them without double opt-in", async () => {
+    await requestSubscription(sql, OPERATOR);
+    const [pending] = await sql<{ id: string; confirm_token: string }[]>`
+      select id, confirm_token from subscriber
+    `;
+
+    const id = await ensureOperator(sql, OPERATOR);
+
+    // Same row, now the operator and confirmed: the address is configured by
+    // the person who runs the pipeline, so a pending signup for it is theirs.
+    expect(id).toBe(pending!.id);
+    expect(
+      await sql`select is_operator, confirmed_at, unsubscribed_at, confirm_token from subscriber`,
+    ).toMatchObject([
+      {
+        is_operator: true,
+        confirmed_at: expect.any(Date),
+        unsubscribed_at: null,
+        confirm_token: pending!.confirm_token,
+      },
+    ]);
+    expect(await sql`select id from subscription`).toHaveLength(1);
+  });
+
+  it("promotes an unsubscribed subscriber but leaves them unsubscribed", async () => {
+    const aliceId = await signUp(OPERATOR);
+    await sql`update subscriber set unsubscribed_at = now() where id = ${aliceId}`;
+
+    const id = await ensureOperator(sql, OPERATOR);
+
+    // The flag moves and the unsubscribe stands: the operator's digest is
+    // still assembled for the reader, but no email goes to the address.
+    expect(id).toBe(aliceId);
+    expect(
+      await sql`select is_operator, confirmed_at, unsubscribed_at from subscriber`,
+    ).toMatchObject([
+      { is_operator: true, confirmed_at: expect.any(Date), unsubscribed_at: expect.any(Date) },
+    ]);
+  });
 });

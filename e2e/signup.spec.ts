@@ -14,7 +14,10 @@ test("a visitor can sign up and an unconfirmed subscriber is created", async ({ 
   await section.getByLabel("Email address").fill(email);
   await section.getByRole("button", { name: "Subscribe" }).click();
 
-  await expect(section.getByText("Check your inbox to confirm your subscription.")).toBeVisible();
+  const status = section.getByText("Check your inbox to confirm your subscription.");
+  await expect(status).toBeVisible();
+  // The button was disabled while submitting; focus must land on the outcome.
+  await expect(status).toBeFocused();
 
   const sql = connect();
   try {

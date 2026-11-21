@@ -177,14 +177,19 @@ export const ensureOperator = async (sql: Sql, email: string): Promise<string> =
   })) as string;
 
 /**
- * Subscribers a pipeline run assembles digests for: confirmed and not
- * unsubscribed. Oldest first, with the id as a tie-break, so the operator
- * (created first) goes first and the order is the same on every run.
+ * Subscribers a pipeline run assembles digests for: the confirmed, not
+ * unsubscribed ones, plus the operator whatever their state. The operator's
+ * digest is the public edition the reader shows (migration 7), so it must be
+ * assembled even after the operator presses the unsubscribe link in their own
+ * email; that link only stops the operator's email, which
+ * `digestsAwaitingDelivery` gates separately. Oldest first, with the id as a
+ * tie-break, so the operator (created first) goes first and the order is the
+ * same on every run.
  */
 export const activeSubscriberIds = async (sql: Queryable): Promise<string[]> => {
   const rows = await sql<{ id: string }[]>`
     select id from subscriber
-    where confirmed_at is not null and unsubscribed_at is null
+    where (confirmed_at is not null and unsubscribed_at is null) or is_operator
     order by created_at, id
   `;
   return rows.map((row) => row.id);
@@ -231,9 +236,20 @@ export interface PendingConfirmation {
 }
 
 /**
+ * How many times a confirmation email is tried before the row is left alone.
+ * It matches the ceiling in migration 5 (`confirmation_attempts < 3`) and
+ * counts successful and failed sends alike, so an address the mail server
+ * rejects costs three attempts in total and then stops taking a place in the
+ * queue.
+ */
+export const MAX_CONFIRMATION_ATTEMPTS = 3;
+
+/**
  * Subscribers owed a confirmation email: not yet confirmed, not unsubscribed,
- * and nothing sent since they were queued. Oldest first, so a flood of signups
- * drains in the order it arrived.
+ * nothing sent since they were queued, and fewer than three attempts so far.
+ * Never-tried signups go ahead of ones that already failed, then oldest
+ * first, so a run of undeliverable addresses cannot starve the valid ones
+ * queued behind them.
  */
 export const confirmationsAwaitingSend = async (
   sql: Sql,
@@ -242,7 +258,8 @@ export const confirmationsAwaitingSend = async (
   const rows = await sql<{ id: string; email: string; confirm_token: string }[]>`
     select id, email, confirm_token from subscriber
     where confirmed_at is null and unsubscribed_at is null and confirmation_sent_at is null
-    order by created_at, id
+      and confirmation_attempts < ${MAX_CONFIRMATION_ATTEMPTS}
+    order by confirmation_attempts, created_at, id
     limit ${limit}
   `;
   return rows.map((row) => ({
@@ -259,6 +276,53 @@ export const recordConfirmationSent = async (sql: Sql, subscriberId: string): Pr
     set confirmation_sent_at = now(), confirmation_attempts = confirmation_attempts + 1
     where id = ${subscriberId}
   `;
+};
+
+/**
+ * Record a failed confirmation send. The row stays pending (no
+ * `confirmation_sent_at`), so a brief outage costs one of the three attempts
+ * and the next run retries it.
+ */
+export const recordConfirmationFailed = async (sql: Sql, subscriberId: string): Promise<void> => {
+  await sql`
+    update subscriber set confirmation_attempts = confirmation_attempts + 1
+    where id = ${subscriberId}
+  `;
+};
+
+/** Confirmation emails sent in the last 24 hours, for the daily ceiling. */
+export const confirmationsSentInLastDay = async (sql: Sql): Promise<number> => {
+  const rows = await sql<{ n: number }[]>`
+    select count(*)::int as n from subscriber
+    where confirmation_sent_at > now() - interval '24 hours'
+  `;
+  return rows[0]!.n;
+};
+
+/** How long an unconfirmed signup is kept before the cleanup removes it. */
+export const UNCONFIRMED_RETENTION_DAYS = 7;
+
+/**
+ * Delete signups that never confirmed: not confirmed, not unsubscribed, not
+ * the operator, and requested more than seven days ago (`requested_at`, from
+ * migration 8, so a returning subscriber who asks again gets a fresh week).
+ * Returns how many rows were removed. Without it, anyone could grow the table
+ * without limit through the public form.
+ *
+ * `subscription`, `digest` (migration 1: `on delete cascade` from subscriber)
+ * and their `digest_item` and `delivery` rows go with the subscriber, so the
+ * delete cannot fail on a row that owns digests. A returning subscriber who
+ * never re-confirmed loses those old digests, which they could no longer
+ * receive anyway.
+ */
+export const deleteStaleUnconfirmed = async (sql: Sql): Promise<number> => {
+  const deleted = await sql`
+    delete from subscriber
+    where confirmed_at is null and unsubscribed_at is null and not is_operator
+      and requested_at < now() - make_interval(days => ${UNCONFIRMED_RETENTION_DAYS})
+    returning id
+  `;
+  return deleted.length;
 };
 
 const eventsWithProvenance = async (
@@ -447,8 +511,22 @@ export interface PendingDelivery {
 }
 
 /**
+ * How many failed delivery rows a digest may collect on one channel before it
+ * is no longer retried. The trade-off: a multi-day outage can now drop a
+ * digest for good (five daily runs fail, and the digest is never resent).
+ * Unlimited retries meant one dead address failed the daily run every day
+ * until someone intervened, which hid real problems behind a permanently red
+ * run. Five tries rides out an outage of a few days.
+ */
+export const MAX_FAILED_DELIVERIES = 5;
+
+/**
  * Digests a channel has not yet successfully delivered (§10). Failed
- * attempts leave the digest pending, so the next run resends only those.
+ * attempts leave the digest pending, so the next run resends only those,
+ * until it has failed `MAX_FAILED_DELIVERIES` times. A digest whose window
+ * ended before the subscriber's current confirmation is never delivered: it
+ * belongs to an earlier subscription, and mailing it months later after they
+ * confirm again would be stale news.
  */
 export const digestsAwaitingDelivery = async (
   sql: Sql,
@@ -460,10 +538,15 @@ export const digestsAwaitingDelivery = async (
     join subscriber s on s.id = d.subscriber_id
     where s.unsubscribed_at is null
       and s.confirmed_at is not null
+      and d.window_end > s.confirmed_at
       and not exists (
-      select 1 from delivery dv
-      where dv.digest_id = d.id and dv.channel = ${channelId} and dv.status = 'sent'
-    )
+        select 1 from delivery dv
+        where dv.digest_id = d.id and dv.channel = ${channelId} and dv.status = 'sent'
+      )
+      and (
+        select count(*) from delivery dv
+        where dv.digest_id = d.id and dv.channel = ${channelId} and dv.status = 'failed'
+      ) < ${MAX_FAILED_DELIVERIES}
     order by d.window_end
   `;
   return rows.map((row) => ({

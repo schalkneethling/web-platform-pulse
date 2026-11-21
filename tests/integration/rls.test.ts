@@ -252,6 +252,24 @@ describe("the policy layer itself", () => {
     ).toMatchObject([{ ok: false }]);
   });
 
+  it("holds no table-level privilege on digest, so the column grant restricts something", async () => {
+    // Supabase's default privileges give anon table-level SELECT on every new
+    // table, and a table-level grant makes the column grant pointless, since
+    // PostgreSQL ORs the two. Migration 8 revokes it. Locally nothing grants
+    // it to begin with, so this asserts the end state production must reach.
+    expect(
+      await sql`select has_table_privilege('anon', 'public.digest', 'select') as ok`,
+    ).toMatchObject([{ ok: false }]);
+    for (const column of ["subscriber_id", "created_at"]) {
+      expect(
+        await sql`select has_column_privilege('anon', 'public.digest', ${column}, 'select') as ok`,
+      ).toMatchObject([{ ok: false }]);
+    }
+    expect(
+      await sql`select has_column_privilege('anon', 'public.digest', 'id', 'select') as ok`,
+    ).toMatchObject([{ ok: true }]);
+  });
+
   it("leaves four functions as the only public ones anon can execute", async () => {
     // Migration 4 withdrew EXECUTE from PUBLIC; migrations 5 and 6 grant it
     // back to anon for signup, confirm and unsubscribe, and migration 7 for

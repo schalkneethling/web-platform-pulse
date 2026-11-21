@@ -175,7 +175,7 @@ describe("unsubscribe", () => {
 });
 
 describe("delivery gate", () => {
-  it("holds a re-requested subscriber's digest until they confirm again", async () => {
+  const assembleBeforeLeaving = async () => {
     await ensureSource(sql, "web-features", "artifact-diff");
     await requestSubscription(sql, "back@example.com");
     const first = await subscriber("back@example.com");
@@ -185,14 +185,38 @@ describe("delivery gate", () => {
     await unsubscribe(sql, first.unsubscribe_token);
     // Re-requesting clears unsubscribed_at and confirmed_at (migration 5).
     await requestSubscription(sql, "back@example.com");
+    return first;
+  };
+
+  it("holds a re-requested subscriber's digest until they confirm again", async () => {
+    await assembleBeforeLeaving();
 
     expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
+  });
 
+  it("never mails a digest that ended before the subscriber confirmed again", async () => {
+    const first = await assembleBeforeLeaving();
+    // The digest was cut and never delivered before they left, two days ago.
+    await sql`
+      update digest set window_start = window_start - interval '2 days',
+                        window_end = window_end - interval '2 days'
+      where subscriber_id = ${first.id}
+    `;
+
+    const again = await subscriber("back@example.com");
+    await confirmSubscription(sql, again.confirm_token);
+
+    expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
+  });
+
+  it("still offers a digest whose window ends after the confirmation", async () => {
+    const first = await assembleBeforeLeaving();
     const again = await subscriber("back@example.com");
     await confirmSubscription(sql, again.confirm_token);
 
     expect(await digestsAwaitingDelivery(sql, "email")).toMatchObject([
       { email: "back@example.com" },
     ]);
+    expect(first.id).toBe(again.id);
   });
 });

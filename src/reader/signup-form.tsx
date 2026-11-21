@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { getReaderClient } from "./supabase.ts";
 
 type SignupState = "idle" | "submitting" | "sent" | "failed";
@@ -18,6 +18,7 @@ const MESSAGES: Record<SignupState, string> = {
  */
 export const SignupForm = () => {
   const [state, setState] = useState<SignupState>("idle");
+  const statusRef = useRef<HTMLParagraphElement>(null);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -32,13 +33,16 @@ export const SignupForm = () => {
       });
       if (error) {
         setState("failed");
-        return;
+      } else {
+        form.reset();
+        setState("sent");
       }
-      form.reset();
-      setState("sent");
     } catch {
       setState("failed");
     }
+    // Disabling the button while submitting drops keyboard focus to the page
+    // body; land it on the outcome so the next keystroke starts from there.
+    statusRef.current?.focus();
   };
 
   return (
@@ -63,7 +67,7 @@ export const SignupForm = () => {
             Subscribe
           </button>
         </div>
-        <p className="signup__status" aria-live="polite">
+        <p className="signup__status" aria-live="polite" ref={statusRef} tabIndex={-1}>
           {MESSAGES[state]}
         </p>
       </form>
