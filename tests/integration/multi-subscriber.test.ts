@@ -291,6 +291,30 @@ describe("one run, many subscribers", () => {
         "after-return is now Baseline widely available",
         "before-leaving is now Baseline widely available",
       ]);
+      // The pre-departure digest was never delivered, and the returning
+      // subscriber is not mailed it months later: only the post-return one.
+      const mail = await bodyFor("returning@example.com");
+      expect(mail).toHaveLength(1);
+      expect(mail[0]!.text).toContain("after-return");
+      expect(mail[0]!.text).not.toContain("before-leaving");
+      expect(summary.deliveries).toEqual({ sent: 2, failed: 0 });
+    },
+  );
+
+  it(
+    "keeps assembling the operator's digest after they unsubscribe, but mails nothing",
+    SLOW_SMTP,
+    async () => {
+      const operatorId = await ensureOperator(sql, OPERATOR);
+      await unsubscribe(sql, await tokenOf(OPERATOR));
+      await ingestCandidates(sql, [baselineEvent("lh", ["css"])]);
+
+      const summary = await run();
+
+      expect(summary.digestIds).toHaveLength(1);
+      expect(await digestCount(operatorId)).toBe(1);
+      expect(summary.deliveries).toEqual({ sent: 0, failed: 0 });
+      expect(await bodyFor(OPERATOR)).toEqual([]);
     },
   );
 

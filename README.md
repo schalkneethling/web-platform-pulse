@@ -89,13 +89,50 @@ Useful flags and environment variables:
 | `--specs <path>`                     | W3C spec-transition fixture instead of the live feeds       |
 | `--tag-reviews <path>`               | TAG design-review fixture instead of the live issues API    |
 | `--voices <path>`                    | Voices fixture instead of the live blog feeds               |
-| `--email` / `PULSE_SUBSCRIBER_EMAIL` | The subscriber address                                      |
+| `--email` / `PULSE_SUBSCRIBER_EMAIL` | The operator's address; changing it re-points the reader    |
 | `--smtp` / `PULSE_SMTP_URL`          | SMTP transport; omit it and email is skipped                |
 | `PULSE_EMAIL_FROM`                   | Sender address                                              |
+| `PULSE_PUBLIC_URL`                   | The reader's origin; confirm and unsubscribe links use it   |
 | `DATABASE_URL`                       | Postgres connection (defaults to the local Docker instance) |
 
 Every variable in the table is an item in `.env.schema`; setting it in the
 shell overrides what Varlock resolves.
+
+`vp run pulse confirmations` sends only the pending signup confirmation
+emails and exits. A plain `vp run pulse` sends them too, after the pipeline.
+
+## Subscribers
+
+There are two kinds of subscriber. The **operator** is the address in
+`PULSE_SUBSCRIBER_EMAIL`: the pipeline creates it, confirms it without an
+email round trip, and marks it with `subscriber.is_operator`. Its digest is
+unfiltered, and it is the one the public reader shows.
+
+Everyone else signs up through the form in the reader and goes through double
+opt-in:
+
+```
+reader form ──► request_subscription()      unconfirmed row
+                        │
+pulse confirmations ──► email with /confirm?token=…
+                        │
+/confirm page, button ──► confirm_subscription()   confirmed_at set
+                        │
+daily pulse run ──► their own filtered digest, by email only
+                        │
+/unsubscribe page, button ──► unsubscribe()        unsubscribed_at set
+```
+
+The three functions are `security definer` SQL functions (migrations 5 and 6)
+that the browser calls through PostgREST as the `anon` role, because that
+role has no access to the `subscriber` table itself. A new subscriber's first
+digest covers only what was observed after they confirmed; they are never
+sent the backlog.
+
+The form is public, so the database and the sender bound what it can cost:
+one confirmation email per address per day and three in total, twenty per
+run, two hundred per day, and a signup nobody confirms is deleted after seven
+days. A digest that fails to deliver is retried on five runs and then left.
 
 ## Testing
 
@@ -121,13 +158,14 @@ walkthrough and what comes next.
 - **Resend** provides SMTP: `smtps://resend:API_KEY@smtp.resend.com:465` (the
   `smtps://` scheme matters — port 465 expects TLS from the first byte).
 - **GitHub Actions** (`.github/workflows/pulse.yml`) runs the pipeline daily at
-  07:00 UTC, with `workflow_dispatch` for manual runs.
+  07:00 UTC, with `workflow_dispatch` for manual runs. A second workflow
+  (`confirmations.yml`) sends pending signup confirmations every 15 minutes.
 - **Cloudflare Workers** hosts the reader as static assets (`wrangler.jsonc`),
   deployed by `.github/workflows/deploy.yml` on every push to `main`.
 
 1Password is used on the development machine only. The workflows read
 GitHub's own repository secrets -- `DATABASE_URL`, `PULSE_SMTP_URL`,
-`PULSE_SUBSCRIBER_EMAIL`, `PULSE_EMAIL_FROM`, `VITE_SUPABASE_URL`,
+`PULSE_PUBLIC_URL`, `PULSE_SUBSCRIBER_EMAIL`, `PULSE_EMAIL_FROM`, `VITE_SUPABASE_URL`,
 `VITE_SUPABASE_ANON_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` --
 and one command copies them there from the `web-platform-pulse` item:
 
@@ -144,8 +182,14 @@ the anon key selects a Postgres role, and `supabase/migrations/` is what
 decides what that role may read. The Cloudflare API token needs only the
 "Edit Cloudflare Workers" permission.
 
-The reader shows the most recent digest to anyone who visits. That is
-acceptable only while the deployment is single-tenant — see `NEXT_STEPS.md`.
+The reader shows the operator's most recent digest to anyone who visits, and
+only that one: migration 7 restricts the `anon` role to the operator's digest
+rows, so another subscriber's filtered digest is not readable through the
+public key.
+
+Apply every migration before the code that depends on it is merged. The
+pipeline reads columns that migrations 5 to 8 add, so a deploy ahead of the
+SQL editor fails the daily run.
 
 ## Project layout
 

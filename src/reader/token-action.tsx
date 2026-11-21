@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { getReaderClient } from "./supabase.ts";
 
 /**
@@ -33,7 +33,7 @@ export const UNSUBSCRIBE_ACTION: TokenActionConfig = {
 
 type ActionState = "idle" | "working" | "done" | "invalid";
 
-const INVALID_TEXT = "This link is not valid or has expired.";
+const INVALID_TEXT = "This link is not valid.";
 const INCOMPLETE_TEXT =
   "This link is incomplete: it has no token. Open the link from your email again.";
 
@@ -50,12 +50,14 @@ interface TokenActionProps {
  * somebody who never saw the message.
  *
  * The RPC answers true for a valid token and false for an unknown or
- * superseded one. An error (a malformed token is a 400, a network failure) is
+ * superseded one. Tokens never expire, so the message claims no more than
+ * that the link is not valid. An error (a malformed token is a 400, a network failure) is
  * shown as the same "not valid" state: the person can do nothing different,
  * and a raw error would only leak implementation detail.
  */
 export const TokenAction = ({ action, token }: TokenActionProps) => {
   const [state, setState] = useState<ActionState>("idle");
+  const statusRef = useRef<HTMLParagraphElement>(null);
 
   const handleClick = async () => {
     if (token === null) return;
@@ -68,6 +70,9 @@ export const TokenAction = ({ action, token }: TokenActionProps) => {
     } catch {
       setState("invalid");
     }
+    // The button is disabled while working and removed once done, either of
+    // which drops keyboard focus to the page body. Land it on the outcome.
+    statusRef.current?.focus();
   };
 
   const status =
@@ -97,7 +102,7 @@ export const TokenAction = ({ action, token }: TokenActionProps) => {
           </button>
         </>
       )}
-      <p className="reader__token-action-status" aria-live="polite">
+      <p className="reader__token-action-status" aria-live="polite" ref={statusRef} tabIndex={-1}>
         {status}
       </p>
       <p>

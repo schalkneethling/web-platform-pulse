@@ -5,6 +5,17 @@ on:
     - cron: "0 7 * * *" # 07:00 UTC daily
   workflow_dispatch: # manual trigger for testing
 
+permissions:
+  contents: read
+
+# Shares a group with confirmations.yml. This run also sends pending signup
+# confirmations, so a run that overlapped the 15-minute confirmations run would
+# read the same pending rows and mail each address twice. A run that finds the
+# other in progress waits for it rather than cancelling it.
+concurrency:
+  group: confirmations
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-latest

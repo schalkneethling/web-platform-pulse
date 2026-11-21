@@ -10,8 +10,12 @@ on:
     - cron: "*/15 * * * *" # every 15 minutes
   workflow_dispatch: # manual trigger for testing
 
+permissions:
+  contents: read
+
 # Two runs must never overlap: both would read the same pending rows and mail
-# each address twice. A run that finds one in progress waits for it.
+# each address twice. A run that finds one in progress waits for it. pulse.yml
+# joins this group because its run sends confirmations too.
 concurrency:
   group: confirmations
   cancel-in-progress: false

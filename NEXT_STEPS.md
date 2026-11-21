@@ -18,7 +18,7 @@ aggregating the WebKit, Igalia, Mozilla Hacks, W3C, and WHATWG blogs
 The slices below are roughly in priority order. Slice G — the weekly
 editorial issue — is the destination the others now serve: D keeps an issue
 readable, F is what a curation surface is built on, and E is the polish that
-can follow publication rather than precede it. So: D, F, G, then E.
+can follow publication rather than precede it. D and F are done, so: G, then E.
 
 ---
 
@@ -31,20 +31,49 @@ instrument; this slice is about presentation.
 
 ## Slice F — Reader SPA deployment and multi-subscriber
 
-The deployment half is done: the `digestApi` Vite plugin is gone, the reader
-reads through PostgREST with the anon key, every table carries RLS, and the
-SPA deploys to Cloudflare Workers static assets on each push to `main`.
+Done, in two halves.
+
+The deployment half: the `digestApi` Vite plugin is gone, the reader reads
+through PostgREST with the anon key, every table carries RLS, and the SPA
+deploys to Cloudflare Workers static assets on each push to `main`.
 Cloudflare now steers new static projects to Workers rather than Pages, so
 that is where it went.
 
-What remains is the multi-subscriber half, and it is a prerequisite for
-sharing the reader rather than a follow-up. The anon role cannot read
-`subscriber`, so the reader cannot resolve _whose_ digest to show — it asks
-for the most recent one that exists. With a single confirmed subscriber that
-is the operator's by construction; with two it is whoever ran last. The read
-policies are `using (true)` for the same reason, and become `auth.uid()`
-predicates once there is an identity to key on. So: public signup and
-confirmation (#62, #63), then identity (#65), before the URL goes to anyone.
+The multi-subscriber half: a visitor signs up through a form in the reader,
+confirms through an emailed link, and from then on receives their own
+filtered digest; every digest email carries an unsubscribe link. One pipeline
+run serves every confirmed subscriber, and a new subscriber's first digest
+starts at their confirmation rather than at the beginning of the archive.
+The operator is an explicit `is_operator` flag instead of "whoever was
+created first", and the read policies let the anon role see the operator's
+digest only.
+
+What Slice F deliberately leaves out:
+
+- **A per-subscriber reader view.** Other subscribers get their digest by
+  email and have no page of their own. Showing them one needs real
+  authentication (Supabase Auth, `auth.uid()` predicates on `digest`), and
+  Slice G needs an authenticated operator anyway, so the two land together.
+- **A subscription settings page.** `taxonomies`, `significance_floor` and
+  `cadence` exist per subscriber, but only SQL can change them today. The
+  same authentication unlocks it.
+- **Bot protection on the signup form.** The database and the sender bound
+  the damage (one confirmation per address per day and three in total, twenty
+  per run, two hundred per day, unconfirmed rows deleted after a week), but a
+  script can still spend that daily allowance on strangers' addresses and
+  crowd out real signups. Cloudflare
+  Turnstile needs a server to verify the token, which means giving the Worker
+  a script; do that before the form gets real traffic.
+- **Function privileges depend on the Supabase project's defaults.** Checked
+  against production when migrations 4 to 8 were applied (2026-11-21): this
+  project does not hand `anon` or `authenticated` execute on new functions
+  in `public`, so the four that `anon` can call are callable only through
+  their explicit grants. Older Supabase projects grant it by default, and
+  the local database cannot show the difference, so re-check with
+  `has_function_privilege` after adding a `security definer` helper.
+- **One-click unsubscribe (RFC 8058).** Mail clients POST to the unsubscribe
+  URL without the `apikey` header PostgREST requires, so the header points at
+  the reader's page instead. The same Worker script would fix it.
 
 ## Slice G — The weekly issue: curate, annotate, publish
 

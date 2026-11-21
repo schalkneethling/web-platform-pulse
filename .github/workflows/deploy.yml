@@ -59,25 +59,40 @@ jobs:
             echo "::error::Missing repository secrets:$missing"
             exit 1
           fi
-          # The anon key and the service_role key are both JWTs for the same
-          # project and sit next to each other in the Supabase dashboard.
-          # Pasting the wrong one here would publish a BYPASSRLS credential to
-          # the public internet, and every other check in this pipeline would
-          # still pass. So read the role out of the token rather than trusting
-          # that the right one was pasted.
-          payload=$(printf '%s' "$ANON_KEY" | cut -d. -f2 | tr '_-' '/+')
-          # JWT base64url drops padding; GNU base64 rejects it without.
-          case $(( ${#payload} % 4 )) in
-            2) payload="$payload==" ;;
-            3) payload="$payload=" ;;
+          # The public key and the secret key for a project sit next to each
+          # other in the Supabase dashboard. Pasting the wrong one here would
+          # publish a credential that bypasses row-level security to the
+          # public internet, and every other check in this pipeline would
+          # still pass. So identify the key rather than trusting that the
+          # right one was pasted.
+          #
+          # Supabase has two formats. Current projects issue prefixed keys:
+          # `sb_publishable_` is safe to ship, `sb_secret_` is not. Older
+          # projects issue JWTs for both, told apart only by the role claim
+          # inside, so that one has to be decoded.
+          case "$ANON_KEY" in
+            sb_publishable_*)
+              ;;
+            sb_secret_*)
+              echo "::error::VITE_SUPABASE_ANON_KEY holds a Supabase secret key. It must be the publishable key: this value is compiled into a public bundle."
+              exit 1
+              ;;
+            *)
+              payload=$(printf '%s' "$ANON_KEY" | cut -d. -f2 | tr '_-' '/+')
+              # JWT base64url drops padding; GNU base64 rejects it without.
+              case $(( ${#payload} % 4 )) in
+                2) payload="$payload==" ;;
+                3) payload="$payload=" ;;
+              esac
+              role=$(printf '%s' "$payload" | base64 -d 2>/dev/null \
+                | grep -o '"role"[[:space:]]*:[[:space:]]*"[^"]*"' \
+                | sed 's/.*"\([^"]*\)"$/\1/')
+              if [ "$role" != "anon" ]; then
+                echo "::error::VITE_SUPABASE_ANON_KEY must be the publishable or anon key. It is neither an sb_publishable_ key nor a JWT with role 'anon' (role claim: '${role:-unreadable}'). This value is compiled into a public bundle."
+                exit 1
+              fi
+              ;;
           esac
-          role=$(printf '%s' "$payload" | base64 -d 2>/dev/null \
-            | grep -o '"role"[[:space:]]*:[[:space:]]*"[^"]*"' \
-            | sed 's/.*"\([^"]*\)"$/\1/')
-          if [ "$role" != "anon" ]; then
-            echo "::error::VITE_SUPABASE_ANON_KEY must be the anon key. Its role claim is '${role:-unreadable}', not 'anon'. This value is compiled into a public bundle."
-            exit 1
-          fi
 
       - name: Build the reader
         env:

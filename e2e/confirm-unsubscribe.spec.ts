@@ -48,7 +48,10 @@ test("the confirm link confirms only when the button is pressed", async ({ page 
   expect((await subscriberState(email)).confirmed_at).toBeNull();
 
   await button.click();
-  await expect(page.getByText("You are subscribed.")).toBeVisible();
+  const confirmed = page.getByText("You are subscribed.");
+  await expect(confirmed).toBeVisible();
+  // The button is gone; focus must land on the outcome, not the page body.
+  await expect(confirmed).toBeFocused();
   expect((await subscriberState(email)).confirmed_at).not.toBeNull();
 });
 
@@ -63,7 +66,9 @@ test("the unsubscribe link unsubscribes only when the button is pressed", async 
   expect((await subscriberState(email)).unsubscribed_at).toBeNull();
 
   await button.click();
-  await expect(page.getByText("You are unsubscribed.")).toBeVisible();
+  const done = page.getByText("You are unsubscribed.");
+  await expect(done).toBeVisible();
+  await expect(done).toBeFocused();
   expect((await subscriberState(email)).unsubscribed_at).not.toBeNull();
 });
 
@@ -71,7 +76,10 @@ test("an unknown token shows the invalid state", async ({ page }) => {
   await page.goto("/confirm?token=00000000-0000-4000-8000-000000000000");
   await page.getByRole("button", { name: "Confirm subscription" }).click();
 
-  await expect(page.getByText("This link is not valid or has expired.")).toBeVisible();
+  const invalid = page.getByText("This link is not valid.");
+  await expect(invalid).toBeVisible();
+  // The button stays but was disabled mid-request, which drops focus.
+  await expect(invalid).toBeFocused();
   await expect(page.getByText("You are subscribed.")).toBeHidden();
 });
 
@@ -79,7 +87,8 @@ test("a malformed token shows the invalid state, not an error", async ({ page })
   await page.goto("/unsubscribe?token=not-a-uuid");
   await page.getByRole("button", { name: "Unsubscribe" }).click();
 
-  await expect(page.getByText("This link is not valid or has expired.")).toBeVisible();
+  await expect(page.getByText("This link is not valid.")).toBeVisible();
+  await expect(page.getByText("expired")).toHaveCount(0);
 });
 
 test("a link without a token says it is incomplete and offers no button", async ({ page }) => {
