@@ -11,6 +11,7 @@ import {
   ensureOperator,
   ensureSource,
   ingestCandidates,
+  requestSubscription,
 } from "../../src/store/store.ts";
 
 const sql = connect();
@@ -96,6 +97,25 @@ describe("anon is denied", () => {
   });
 });
 
+describe("anon signup", () => {
+  // The browser's whole write path. The function is security definer, so anon
+  // can queue a subscription without being able to read the table back.
+  it("can request a subscription and still cannot read subscriber", async () => {
+    await asAnon((tx) => requestSubscription(tx, "visitor@example.com"));
+
+    const rows =
+      await sql`select email, confirmed_at from subscriber where email = 'visitor@example.com'`;
+    expect(rows).toMatchObject([{ email: "visitor@example.com", confirmed_at: null }]);
+
+    await expect(asAnon((tx) => tx.unsafe("select * from subscriber"))).rejects.toThrow(
+      /permission denied/i,
+    );
+    await expect(
+      asAnon((tx) => tx.unsafe("insert into subscriber (email) values ('direct@example.com')")),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("the policy layer itself", () => {
   // Locally `anon` was never granted anything, so the denials above would
   // pass with RLS switched off entirely. Supabase hands anon table grants by
@@ -155,13 +175,16 @@ describe("the policy layer itself", () => {
     ).toMatchObject([{ ok: false }]);
   });
 
-  it("does not leave public functions executable by anon", async () => {
-    const executable = await sql<{ n: number }[]>`
-      select count(*)::int as n from pg_proc p
+  it("leaves request_subscription as the only public function anon can execute", async () => {
+    // Migration 4 withdrew EXECUTE from PUBLIC; migration 5 grants it back to
+    // anon for this one function, so the signup form can reach it. Any other
+    // name appearing here is a function that became anon-callable by accident.
+    const executable = await sql<{ proname: string }[]>`
+      select p.proname from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'execute')
     `;
-    expect(executable).toMatchObject([{ n: 0 }]);
+    expect(executable).toEqual([{ proname: "request_subscription" }]);
   });
 
   it("grants anon a read policy on exactly the four digest tables", async () => {
