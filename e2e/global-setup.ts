@@ -4,6 +4,7 @@
 // transitions the digest must contain.
 import { readFileSync } from "node:fs";
 import { ensureDatabase } from "../scripts/dev-db.ts";
+import { ensureMailpit } from "../scripts/dev-mail.ts";
 import { ensurePostgrest } from "../scripts/dev-rest.ts";
 import { createWebFeaturesAdapter } from "../src/adapters/web-features.ts";
 import type { WebFeaturesData } from "../src/core/web-features/diff.ts";
@@ -55,4 +56,7 @@ export default async function globalSetup(): Promise<void> {
   }
   // After the seed, so the schema cache PostgREST loads is the migrated one.
   await ensurePostgrest();
+  // The curation spec previews and publishes an issue through the real SMTP
+  // sender, so the mail catcher has to be up.
+  await ensureMailpit();
 }
