@@ -59,7 +59,10 @@ const statusTitle = (feature: ChromeFeature): string => {
   return phrase ? phrase(feature) : `Chrome status for ${feature.name}: ${feature.status}`;
 };
 
-/** chromestatus categories are finer than digest themes (§9). */
+/**
+ * chromestatus categories are finer than digest themes (§9). This is the
+ * fallback for a feature the web-features group graph cannot classify.
+ */
 const themeFromCategory = (category: string): string => {
   const lowered = category.toLowerCase();
   if (lowered === "css") return "css";
@@ -82,11 +85,20 @@ export const deriveChromeStatusIndex = (features: ChromeFeature[]): ChromeStatus
   return index;
 };
 
+/** Answers with a web-features id's themes, or `undefined` when it has none. */
+export type ThemeLookup = (webFeatureId: string) => string[] | undefined;
+
+const themesFor = (feature: ChromeFeature, lookup: ThemeLookup | undefined): string[] =>
+  (feature.webFeature !== null ? lookup?.(feature.webFeature) : undefined) ?? [
+    themeFromCategory(feature.category),
+  ];
+
 const statusCandidate = (
   feature: ChromeFeature,
   before: string | null,
-  observedAt: string,
+  options: DiffOptions,
 ): CandidateEvent => {
+  const { observedAt } = options;
   const title = statusTitle(feature);
   // Keyed by transition, not destination: features revisit statuses (a
   // second origin trial, deprecated then re-enabled), and a
@@ -105,7 +117,7 @@ const statusCandidate = (
     },
     // updated.when is edit time, not transition time; observation is all we have.
     occurredAt: null,
-    taxonomy: [themeFromCategory(feature.category)],
+    taxonomy: themesFor(feature, options.themesForWebFeature),
     dedupeKey: `chrome-status:feature:${feature.id}:${transition}`,
     correlationKey: `feature-status:chrome:${feature.id}:${transition}`,
     provenance: [
@@ -119,6 +131,12 @@ const statusCandidate = (
   };
 };
 
+interface DiffOptions {
+  observedAt: string;
+  /** The web-features group graph's answer, when Chromium mapped the feature. */
+  themesForWebFeature?: ThemeLookup;
+}
+
 /**
  * Cold start (§5.3): the dump's timestamps record edits, not status
  * transitions, so there is no window to replay — the first run seeds
@@ -127,7 +145,7 @@ const statusCandidate = (
 export const diffChromeStatus = (
   prev: ChromeStatusIndex | null,
   features: ChromeFeature[],
-  options: { observedAt: string },
+  options: DiffOptions,
 ): CandidateEvent[] => {
   if (prev === null) return [];
 
@@ -135,7 +153,7 @@ export const diffChromeStatus = (
   for (const feature of features) {
     const before = prev[feature.id] ?? null;
     if (before === feature.status) continue;
-    events.push(statusCandidate(feature, before, options.observedAt));
+    events.push(statusCandidate(feature, before, options));
   }
   return events;
 };

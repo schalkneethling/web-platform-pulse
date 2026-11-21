@@ -4,6 +4,7 @@ import {
   diffChromeStatus,
   type ChromeFeature,
   type ChromeStatusIndex,
+  type ThemeLookup,
 } from "../core/chrome-status/diff.ts";
 import { fetchWithTimeout } from "./http.ts";
 
@@ -93,8 +94,29 @@ export const fetchChromeFeatures = async (): Promise<ChromeFeature[]> => {
 
 export interface ChromeStatusAdapterOptions {
   fetchFeatures: () => Promise<ChromeFeature[]>;
+  /**
+   * Supplies the web-features themes for features Chromium has mapped. It is
+   * an enrichment, not a dependency: when it rejects or is absent the source
+   * still runs and classifies by chromestatus category.
+   */
+  loadThemeLookup?: () => Promise<ThemeLookup>;
   now?: () => Date;
 }
+
+const loadLookup = async (
+  load: (() => Promise<ThemeLookup>) | undefined,
+): Promise<ThemeLookup | undefined> => {
+  if (!load) return undefined;
+  try {
+    return await load();
+  } catch (error) {
+    // The web-features source reports its own failure; this source carries on.
+    console.warn(
+      `chrome-status: web-features themes unavailable, using chromestatus categories (${String(error)})`,
+    );
+    return undefined;
+  }
+};
 
 export const createChromeStatusAdapter = (
   options: ChromeStatusAdapterOptions,
@@ -105,8 +127,10 @@ export const createChromeStatusAdapter = (
     kind: "artifact-diff",
     run: async (cursor) => {
       const features = await options.fetchFeatures();
+      const themesForWebFeature = await loadLookup(options.loadThemeLookup);
       const events = diffChromeStatus(cursor, features, {
         observedAt: now().toISOString(),
+        ...(themesForWebFeature && { themesForWebFeature }),
       });
       // The cursor only advances for features this run observed, so a
       // truncated dump cannot erase another feature's memory.

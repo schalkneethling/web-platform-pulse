@@ -1,3 +1,4 @@
+import { THEME_ORDER } from "./themes.ts";
 import { splitBrowserSupport, type SupportRollup } from "./support-rollup.ts";
 import type { ChangeEvent } from "./types.ts";
 
@@ -9,10 +10,6 @@ export interface DigestView {
   cadence: string;
   items: ChangeEvent[];
 }
-
-/** Theme order for presentation: platform work first, browsers and runtimes
- * after, commentary (Voices) closing the digest. */
-const THEME_ORDER = ["css", "html", "javascript", "api", "browser", "runtime", "voices"];
 
 /** Presentation labels shared by every renderer of a digest. */
 export const THEME_LABELS: Record<string, string> = {

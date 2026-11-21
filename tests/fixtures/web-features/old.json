@@ -203,6 +203,32 @@
       "redirect_target": "masonry"
     }
   },
-  "groups": {},
+  "groups": {
+    "container-queries": {
+      "name": "Container queries",
+      "parent": "css"
+    },
+    "css": {
+      "name": "CSS"
+    },
+    "image-scaling": {
+      "name": "Image scaling",
+      "parent": "images"
+    },
+    "images": {
+      "name": "Images"
+    },
+    "javascript": {
+      "name": "JavaScript"
+    },
+    "selectors": {
+      "name": "Selectors",
+      "parent": "css"
+    },
+    "units": {
+      "name": "Units",
+      "parent": "css"
+    }
+  },
   "snapshots": {}
 }

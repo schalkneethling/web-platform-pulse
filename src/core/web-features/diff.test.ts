@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
-import { deriveIndex, diffWebFeatures } from "./diff.ts";
+import { createThemeLookup, deriveIndex, diffWebFeatures } from "./diff.ts";
 import type { WebFeaturesData } from "./diff.ts";
 
 const load = (name: string): WebFeaturesData =>
@@ -36,6 +36,43 @@ describe("deriveIndex", () => {
       },
       taxonomy: ["css"],
     });
+  });
+
+  it("derives taxonomy from the group graph, resolving a nested group to its root", () => {
+    const index = deriveIndex(newData);
+    expect(index["has"]?.taxonomy).toEqual(["css"]); // selectors -> css
+    expect(index["array-grouping"]?.taxonomy).toEqual(["javascript"]);
+  });
+
+  it("lets a group under a non-theme root fall through to the spec URL", () => {
+    // In the live data `images` is a root of its own, so the graph has no
+    // theme for image-scaling and the csswg spec URL decides.
+    expect(deriveIndex(newData)["crisp-edges"]?.taxonomy).toEqual(["css"]);
+  });
+
+  it("falls back to the spec URL for a feature with no group, then to api", () => {
+    const entry = (spec?: string[]) => ({
+      kind: "feature" as const,
+      name: "X",
+      ...(spec && { spec }),
+      status: { baseline: false as const, support: {} },
+    });
+    const index = deriveIndex({
+      features: {
+        css: entry(["https://drafts.csswg.org/css-values-4/"]),
+        none: entry(),
+        unknown: { ...entry(["https://tc39.es/ecma262/"]), group: ["ghost"] },
+      },
+      groups: {},
+    });
+    expect(index["css"]?.taxonomy).toEqual(["css"]);
+    expect(index["none"]?.taxonomy).toEqual(["api"]);
+    expect(index["unknown"]?.taxonomy).toEqual(["javascript"]);
+  });
+
+  it("treats data without a groups object as an empty graph", () => {
+    const { groups: _groups, ...withoutGroups } = newData;
+    expect(deriveIndex(withoutGroups)["has"]?.taxonomy).toEqual(["css"]); // spec URL
   });
 
   it("excludes moved and split entries", () => {
@@ -119,6 +156,14 @@ describe("diffWebFeatures", () => {
     expect(diff(deriveIndex(newData), deriveIndex(newData))).toEqual([]);
   });
 
+  it("emits no event when only the taxonomy changed", () => {
+    const before = deriveIndex(newData);
+    const after = Object.fromEntries(
+      Object.entries(before).map(([id, feature]) => [id, { ...feature, taxonomy: ["api"] }]),
+    );
+    expect(diff(before, after)).toEqual([]);
+  });
+
   describe("cold start (no previous index)", () => {
     it("emits only transitions dated within the seven days before now", () => {
       // baseline_high_date for storage-access in the live data is 2026-06-05,
@@ -158,5 +203,30 @@ describe("diffWebFeatures", () => {
       expect(coldEvents).toHaveLength(1);
       expect(coldEvents[0]?.occurredAt).toBe("2026-06-08");
     });
+  });
+});
+
+describe("createThemeLookup", () => {
+  const lookup = createThemeLookup(newData);
+
+  it("answers with the themes of a known grouped feature", () => {
+    expect(lookup("has")).toEqual(["css"]);
+  });
+
+  it("answers undefined for an unknown id", () => {
+    expect(lookup("ghost")).toBeUndefined();
+  });
+
+  it("answers undefined for a moved entry", () => {
+    expect(lookup("masonry-layout")).toBeUndefined();
+  });
+
+  it("answers undefined for a feature with no group and no recognised spec", () => {
+    const data: WebFeaturesData = {
+      features: {
+        bare: { kind: "feature", name: "Bare", status: { baseline: false, support: {} } },
+      },
+    };
+    expect(createThemeLookup(data)("bare")).toBeUndefined();
   });
 });

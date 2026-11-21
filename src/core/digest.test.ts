@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { capThemeGroup, orderForDigest, THEME_ITEM_CAP, themeUnits } from "./digest.ts";
+import {
+  capThemeGroup,
+  groupByTheme,
+  orderForDigest,
+  THEME_ITEM_CAP,
+  themeUnits,
+} from "./digest.ts";
 import type { ChangeEvent } from "./types.ts";
 
 const event = (id: string, overrides: Partial<ChangeEvent>): ChangeEvent => ({
@@ -65,6 +71,15 @@ describe("orderForDigest", () => {
     expect(ordered.map((e) => e.id)).toEqual(["css-major", "css-minor", "node-release"]);
   });
 
+  it("places a multi-theme event with its first theme, ahead of a later theme's events", () => {
+    const ordered = orderForDigest([
+      event("api-only", { taxonomy: ["api"], significance: 0.9 }),
+      event("css-and-html", { taxonomy: ["css", "html"], significance: 0.1 }),
+      event("html-only", { taxonomy: ["html"], significance: 0.9 }),
+    ]);
+    expect(ordered.map((e) => e.id)).toEqual(["css-and-html", "html-only", "api-only"]);
+  });
+
   it("is deterministic for equal significance", () => {
     const events = [event("b", { significance: 0.5 }), event("a", { significance: 0.5 })];
     expect(orderForDigest(events).map((e) => e.id)).toEqual(["a", "b"]);
@@ -73,6 +88,21 @@ describe("orderForDigest", () => {
 
   it("returns an empty list for no events", () => {
     expect(orderForDigest([])).toEqual([]);
+  });
+});
+
+describe("groupByTheme", () => {
+  it("groups a multi-theme event under its first theme only", () => {
+    const groups = groupByTheme(
+      orderForDigest([
+        event("css-and-html", { taxonomy: ["css", "html"] }),
+        event("html-only", { taxonomy: ["html"] }),
+      ]),
+    );
+    expect(groups.map((g) => [g.theme, g.items.map((e) => e.id)])).toEqual([
+      ["css", ["css-and-html"]],
+      ["html", ["html-only"]],
+    ]);
   });
 });
 
