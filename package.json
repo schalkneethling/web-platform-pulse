@@ -19,7 +19,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "fast-xml-parser": "^5.12.1",
-    "nodemailer": "^9",
+    "nodemailer": "^10",
     "postgres": "^3.4.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
