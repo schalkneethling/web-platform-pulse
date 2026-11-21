@@ -138,11 +138,12 @@ Done. A web-features event's taxonomy now comes from the group graph that
 the `web-features` artifact already carries as its top-level `groups` object,
 so no new dependency and no second download were needed. Each of a feature's
 groups is walked up its `parent` links to a root; the roots `css`, `html` and
-`javascript` become those themes and every other root (`webgl`, `scrolling`,
-`canvas`, …) becomes `api`. A feature in groups under several roots gets
-several themes, in digest order, and the digest groups it under the first.
-A feature with no known group falls back to the old spec-URL guess, and to
-`api` only when that has no answer either, so no feature has an empty taxonomy.
+`javascript` become those themes, and any other root (`webgl`, `scrolling`,
+`canvas`, …) contributes nothing. A feature in groups under several of those
+three roots gets several themes, in digest order, and the digest groups it under
+the first. A feature with no theme from its groups falls back to the old
+spec-URL guess, and to `api` only when that has no answer either, so no feature
+has an empty taxonomy.
 The logic lives in `src/core/taxonomy.ts`.
 
 Chrome Platform Status now uses the same mapping for the features Chromium has
@@ -166,10 +167,11 @@ taxonomy in the cursor.
 
 What Slice E deliberately leaves out:
 
-- **Themes beyond the existing seven.** The roots map onto `THEME_ORDER` as it
-  was, so a root such as `scrolling` or `images` is reported under `api` even
-  when most of its features are CSS. A finer theme list (the AI-standards
-  coverage plan proposes an `ai` theme) would extend `src/core/taxonomy.ts`.
+- **Themes for other roots.** Only `css`, `html` and `javascript` roots give a
+  theme, so a feature whose groups are all under another root (`webgl`,
+  `canvas`, …) is classified by its spec URL or lands in `api`. Giving a root a
+  theme of its own (the AI-standards coverage plan proposes an `ai` theme) means
+  adding it to the root-to-theme table in `src/core/taxonomy.ts`.
 - **Sharing the mapping with the other adapters.** `w3c-specs`,
   `standards-positions`, `tag-reviews`, `voices`, `browser-releases` and
   `runtime-releases` still set their own taxonomy; none of them carries a

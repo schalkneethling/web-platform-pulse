@@ -6,8 +6,18 @@ import { THEME_ORDER } from "./themes.ts";
  */
 export type GroupGraph = Record<string, { name?: string; parent?: string }>;
 
-/** The roots that have a theme of their own; every other root is a Web API. */
-const ROOT_THEMES = new Set(["css", "html", "javascript"]);
+/**
+ * The root-to-theme table: the one place that says which group roots the
+ * graph has an opinion about. A root missing from this table (`scrolling`,
+ * `canvas`, `images`, `webgl`, …) contributes no theme, so the feature falls
+ * through to the spec URL and then to `api`. To give another root a theme
+ * later, add it here and to `THEME_ORDER`.
+ */
+const ROOT_THEMES = new Map([
+  ["css", "css"],
+  ["html", "html"],
+  ["javascript", "javascript"],
+]);
 
 /**
  * Walks `parent` links from a group up to its root. The graph is data from
@@ -26,20 +36,19 @@ export const rootOf = (groupId: string, graph: GroupGraph): string => {
   }
 };
 
-const themeOfRoot = (root: string): string => (ROOT_THEMES.has(root) ? root : "api");
-
 /**
- * Maps each known group to the theme of its root and returns the distinct
- * themes in `THEME_ORDER` order, so the answer does not depend on the order
- * the groups arrive in. A group missing from the graph is ignored. An empty
- * result means "the graph has no answer", which is different from `["api"]`,
- * the answer for a group whose root is not CSS, HTML or JavaScript.
+ * Maps each group to the theme of its root and returns the distinct themes in
+ * `THEME_ORDER` order, so the answer does not depend on the order the groups
+ * arrive in. A group missing from the graph, or whose root has no entry in
+ * the root-to-theme table, contributes nothing. An empty result means "the
+ * graph has no answer", and the caller falls back to the spec URL.
  */
 export const themesForGroups = (groupIds: string[], graph: GroupGraph): string[] => {
   const themes = new Set<string>();
   for (const groupId of groupIds) {
     if (graph[groupId] === undefined) continue;
-    themes.add(themeOfRoot(rootOf(groupId, graph)));
+    const theme = ROOT_THEMES.get(rootOf(groupId, graph));
+    if (theme !== undefined) themes.add(theme);
   }
   return THEME_ORDER.filter((theme) => themes.has(theme));
 };

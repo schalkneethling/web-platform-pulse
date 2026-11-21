@@ -62,14 +62,19 @@ describe("themesForGroups", () => {
     expect(themesForGroups(["javascript"], graph)).toEqual(["javascript"]);
   });
 
-  it("maps every other root to api", () => {
-    expect(themesForGroups(["webgl-extensions"], graph)).toEqual(["api"]);
+  it("gives a group under any other root no theme", () => {
+    expect(themesForGroups(["webgl-extensions"], graph)).toEqual([]);
+    expect(themesForGroups(["webgl"], graph)).toEqual([]);
+  });
+
+  it("ignores a non-theme root next to a css group", () => {
+    expect(themesForGroups(["webgl", "selectors"], graph)).toEqual(["css"]);
   });
 
   it("returns the distinct themes in theme order, whatever order the groups arrive in", () => {
     const forward = themesForGroups(["webgl", "forms", "selectors", "images"], graph);
     const backward = themesForGroups(["images", "selectors", "forms", "webgl"], graph);
-    expect(forward).toEqual(["css", "html", "api"]);
+    expect(forward).toEqual(["css", "html"]);
     expect(backward).toEqual(forward);
   });
 
@@ -88,7 +93,7 @@ describe("themesForGroups", () => {
       b: { parent: "a" },
       orphan: { parent: "ghost" },
     };
-    expect(themesForGroups(["a", "orphan"], damaged)).toEqual(["api"]);
+    expect(themesForGroups(["a", "orphan"], damaged)).toEqual([]);
   });
 });
 
@@ -117,10 +122,16 @@ describe("themesForFeature", () => {
   it("prefers the group graph over the spec URL", () => {
     expect(
       themesForFeature(
-        { group: ["webgl"], spec: ["https://drafts.csswg.org/css-values-4/"] },
+        { group: ["forms"], spec: ["https://drafts.csswg.org/css-values-4/"] },
         graph,
       ),
-    ).toEqual(["api"]);
+    ).toEqual(["html"]);
+  });
+
+  it("returns [] when the only group has a non-theme root and the spec is unrecognised", () => {
+    expect(themesForFeature({ group: ["webgl"], spec: ["https://example.com/"] }, graph)).toEqual(
+      [],
+    );
   });
 
   it("returns [] when neither groups nor spec have an answer", () => {
@@ -136,6 +147,22 @@ describe("deriveTaxonomy", () => {
   it("gives a feature in groups under different roots the same taxonomy for both input orders", () => {
     expect(deriveTaxonomy({ group: ["forms", "selectors"] }, graph)).toEqual(["css", "html"]);
     expect(deriveTaxonomy({ group: ["selectors", "forms"] }, graph)).toEqual(["css", "html"]);
+  });
+
+  it("lets a non-theme root fall through to the spec URL", () => {
+    expect(
+      deriveTaxonomy({ group: ["webgl"], spec: ["https://drafts.csswg.org/css-values-4/"] }, graph),
+    ).toEqual(["css"]);
+  });
+
+  it("gives a feature in a css group and a non-theme group only css", () => {
+    expect(deriveTaxonomy({ group: ["selectors", "webgl"] }, graph)).toEqual(["css"]);
+  });
+
+  it("ends at api for a non-theme root with no recognised spec", () => {
+    expect(
+      deriveTaxonomy({ group: ["webgl"], spec: ["https://registry.khronos.org/webgl/"] }, graph),
+    ).toEqual(["api"]);
   });
 
   it("falls back to the spec URL when the feature has no group", () => {

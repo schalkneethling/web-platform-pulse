@@ -96,12 +96,12 @@ describe("chrome-status adapter", () => {
 
 describe("chrome-status adapter taxonomy", () => {
   const webFeatures: WebFeaturesData = {
-    groups: { css: { name: "CSS" }, webgl: { name: "WebGL" } },
+    groups: { html: { name: "HTML" }, forms: { name: "Forms", parent: "html" } },
     features: {
       "anchor-positioning": {
         kind: "feature",
         name: "Anchor positioning",
-        group: ["webgl"],
+        group: ["forms"],
         status: { baseline: false, support: {} },
       },
     },
@@ -124,7 +124,7 @@ describe("chrome-status adapter taxonomy", () => {
     const byFeature = await run({
       loadThemeLookup: () => Promise.resolve(createThemeLookup(webFeatures)),
     });
-    expect(byFeature["anchor-positioning"]).toEqual(["api"]); // category says CSS
+    expect(byFeature["anchor-positioning"]).toEqual(["html"]); // category says CSS
   });
 
   it("keeps category themes for ids the lookup does not know (miss)", async () => {

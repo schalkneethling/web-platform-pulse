@@ -44,9 +44,10 @@ describe("deriveIndex", () => {
     expect(index["array-grouping"]?.taxonomy).toEqual(["javascript"]);
   });
 
-  it("gives a feature whose group root is not css, html or javascript the api theme", () => {
-    // In the live data `images` is a root of its own, so image-scaling is not CSS.
-    expect(deriveIndex(newData)["crisp-edges"]?.taxonomy).toEqual(["api"]);
+  it("lets a group under a non-theme root fall through to the spec URL", () => {
+    // In the live data `images` is a root of its own, so the graph has no
+    // theme for image-scaling and the csswg spec URL decides.
+    expect(deriveIndex(newData)["crisp-edges"]?.taxonomy).toEqual(["css"]);
   });
 
   it("falls back to the spec URL for a feature with no group, then to api", () => {
