@@ -1,4 +1,5 @@
 import { withinColdStartWindow } from "../cold-start.ts";
+import { deriveTaxonomy, themesForFeature, type GroupGraph } from "../taxonomy.ts";
 import type { CandidateEvent } from "../types.ts";
 
 export type BaselineValue = "high" | "low" | false;
@@ -23,6 +24,8 @@ interface WebFeatureEntry {
 
 export interface WebFeaturesData {
   features: Record<string, WebFeatureEntry>;
+  /** Absent from old artifacts and hand-written fixtures; treated as empty. */
+  groups?: GroupGraph;
 }
 
 export interface IndexedFeature {
@@ -49,19 +52,13 @@ export const BROWSER_LABELS: Record<string, string> = {
 };
 
 /**
- * v1 taxonomy is a coarse bucket derived from the specification URL,
- * isolated here so it can be replaced by a group-graph walk later (§8.1).
+ * The taxonomy is derived at read time, and the stored cursor is the derived
+ * index, so a feature's taxonomy can differ between the cursor and the next
+ * run. That is harmless because `diffWebFeatures` compares baseline and
+ * support only: a taxonomy change alone never produces an event.
  */
-const deriveTaxonomy = (spec: string[] = []): string[] => {
-  const url = spec[0] ?? "";
-  if (url.includes("csswg.org") || url.includes("fxtf.org")) return ["css"];
-  if (url.includes("html.spec.whatwg.org")) return ["html"];
-  if (url.includes("tc39.es")) return ["javascript"];
-  if (url.includes("ecma-international.org")) return ["javascript"];
-  return ["api"];
-};
-
 export const deriveIndex = (data: WebFeaturesData): FeatureIndex => {
+  const graph = data.groups ?? {};
   const index: FeatureIndex = {};
   for (const [id, entry] of Object.entries(data.features)) {
     if (entry.kind !== "feature" || !entry.status) continue;
@@ -75,11 +72,26 @@ export const deriveIndex = (data: WebFeaturesData): FeatureIndex => {
         highDate: entry.status.baseline_high_date,
       }),
       support: entry.status.support ?? {},
-      taxonomy: deriveTaxonomy(entry.spec),
+      taxonomy: deriveTaxonomy(entry, graph),
     };
   }
   return index;
 };
+
+/**
+ * Themes for a web-features id, for sources that carry such an id but
+ * classify features their own way. `undefined` means this data has no answer
+ * (unknown id, or a feature with no group and no recognised spec), so the
+ * caller keeps its own classification instead of being told "api".
+ */
+export const createThemeLookup =
+  (data: WebFeaturesData) =>
+  (id: string): string[] | undefined => {
+    const entry = data.features[id];
+    if (entry?.kind !== "feature") return undefined;
+    const themes = themesForFeature(entry, data.groups ?? {});
+    return themes.length > 0 ? themes : undefined;
+  };
 
 /** Dates may be ranged ("≤2022-09-24"); the bound is the usable date. */
 const parseRangedDate = (date: string | undefined): string | null => {
