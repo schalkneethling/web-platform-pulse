@@ -15,10 +15,12 @@ with `Resolution:` verdicts (Slice B), and the "Voices" digest section
 aggregating the WebKit, Igalia, Mozilla Hacks, W3C, and WHATWG blogs
 (Slice C). Chromium blog and web.dev remain easy Voices additions.
 
-The slices below are roughly in priority order. Slice G — the weekly
-editorial issue — is the destination the others now serve: D keeps an issue
-readable, F is what a curation surface is built on, and E is the polish that
-can follow publication rather than precede it. D, F and G are done, so: E.
+The slices below were in priority order. Slice G — the weekly editorial
+issue — is the destination the others serve: D keeps an issue readable, F is
+what a curation surface is built on, and E is the polish that follows
+publication. D, E, F and G are done, so the roadmap has no remaining slice.
+What is left is the "deliberately leaves out" list at the end of each slice
+below, which is now the backlog.
 
 ---
 
@@ -132,10 +134,46 @@ What Slice G deliberately leaves out:
 
 ## Slice E — Richer taxonomy (group-graph walk)
 
-Replace the spec-URL heuristic in `src/core/web-features/diff.ts` with a
-taxonomy derived from the web-features group graph; browser-specs group
-data can serve the other adapters. Gets more valuable with every source
-added — it is what keeps a fatter digest well grouped.
+Done. A web-features event's taxonomy now comes from the group graph that
+the `web-features` artifact already carries as its top-level `groups` object,
+so no new dependency and no second download were needed. Each of a feature's
+groups is walked up its `parent` links to a root; the roots `css`, `html` and
+`javascript` become those themes and every other root (`webgl`, `scrolling`,
+`canvas`, …) becomes `api`. A feature in groups under several roots gets
+several themes, in digest order, and the digest groups it under the first.
+A feature with no known group falls back to the old spec-URL guess, and to
+`api` only when that has no answer either, so no feature has an empty taxonomy.
+The logic lives in `src/core/taxonomy.ts`.
+
+Chrome Platform Status now uses the same mapping for the features Chromium has
+tied to a web-features id; the rest keep their chromestatus-category theme. The
+pipeline fetches the web-features data once per run and shares it between the
+two sources, and if that download fails, Chrome Platform Status still runs on
+categories.
+
+Existing `change_event.taxonomy` values are not backfilled. Taxonomy is written
+when an event is ingested, so every event from before this change keeps the
+theme the spec-URL guess gave it, and an old event for a feature can sit under
+a different theme from a new event for the same feature. Backfilling would mean
+re-deriving each stored event's taxonomy from its subject, which only works for
+events whose subject is a web-features id; decide that when the mismatch shows
+up in a digest or an issue worth fixing.
+
+A change in a feature's taxonomy alone never produces an event: the web-features
+differ compares baseline and support only, and the stored cursor is the derived
+index, so the first run after this change quietly rewrites every feature's
+taxonomy in the cursor.
+
+What Slice E deliberately leaves out:
+
+- **Themes beyond the existing seven.** The roots map onto `THEME_ORDER` as it
+  was, so a root such as `scrolling` or `images` is reported under `api` even
+  when most of its features are CSS. A finer theme list (the AI-standards
+  coverage plan proposes an `ai` theme) would extend `src/core/taxonomy.ts`.
+- **Sharing the mapping with the other adapters.** `w3c-specs`,
+  `standards-positions`, `tag-reviews`, `voices`, `browser-releases` and
+  `runtime-releases` still set their own taxonomy; none of them carries a
+  web-features id to look up.
 
 ## Researched and rejected (2026-07)
 
