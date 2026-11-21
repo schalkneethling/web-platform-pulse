@@ -4,6 +4,7 @@ import type { CandidateEvent } from "../core/types.ts";
 import { scrubCredentials } from "../delivery/scrub.ts";
 import type { Sql } from "../store/db.ts";
 import {
+  activeSubscriberIds,
   assembleDigest,
   digestsAwaitingDelivery,
   ensureOperator,
@@ -32,6 +33,8 @@ export interface PipelineSummary {
   candidates: number;
   ingest: IngestResult;
   sourceFailures: string[];
+  /** Ids (never addresses) of subscribers whose digest assembly threw. */
+  subscriberFailures: string[];
   /** One per elapsed cadence window that held events — usually 0 or 1. */
   digestIds: string[];
   deliveries: DeliverySummary;
@@ -72,7 +75,7 @@ const deliverPending = async (sql: Sql, channels: DeliveryChannel[]): Promise<De
  * will run the same function.
  */
 export const runPipeline = async (sql: Sql, options: PipelineOptions): Promise<PipelineSummary> => {
-  const subscriberId = await ensureOperator(sql, options.subscriberEmail);
+  await ensureOperator(sql, options.subscriberEmail);
 
   const candidates: CandidateEvent[] = [];
   const cursors: [string, unknown][] = [];
@@ -98,13 +101,29 @@ export const runPipeline = async (sql: Sql, options: PipelineOptions): Promise<P
 
   const now = options.now ?? (() => new Date());
   const digestIds: string[] = [];
-  for (;;) {
-    const digestId = await assembleDigest(sql, subscriberId, now());
-    if (digestId === null) break;
-    digestIds.push(digestId);
+  const subscriberFailures: string[] = [];
+  for (const subscriberId of await activeSubscriberIds(sql)) {
+    try {
+      for (;;) {
+        const digestId = await assembleDigest(sql, subscriberId, now());
+        if (digestId === null) break;
+        digestIds.push(digestId);
+      }
+    } catch (error) {
+      // Log the id only: CI logs are shared and an address is personal data.
+      console.error(`digest assembly for subscriber ${subscriberId} failed:`, error);
+      subscriberFailures.push(subscriberId);
+    }
   }
 
   const deliveries = await deliverPending(sql, options.channels ?? []);
 
-  return { candidates: candidates.length, ingest, sourceFailures, digestIds, deliveries };
+  return {
+    candidates: candidates.length,
+    ingest,
+    sourceFailures,
+    subscriberFailures,
+    digestIds,
+    deliveries,
+  };
 };

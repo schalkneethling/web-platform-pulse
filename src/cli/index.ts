@@ -159,15 +159,23 @@ try {
       summary.sourceFailures.length > 0
         ? ` | sources failed: ${summary.sourceFailures.join(", ")}`
         : "";
+    const subscriberFailures =
+      summary.subscriberFailures.length > 0
+        ? ` | subscribers failed: ${summary.subscriberFailures.join(", ")}`
+        : "";
     console.log(
       `candidates: ${summary.candidates} | created: ${summary.ingest.created}, ` +
         `correlated: ${summary.ingest.correlated}, unchanged: ${summary.ingest.unchanged} | ` +
         `digests: ${summary.digestIds.length > 0 ? summary.digestIds.join(", ") : "none (no closed window)"} | ` +
-        `email: ${summary.deliveries.sent} sent, ${summary.deliveries.failed} failed${failures}`,
+        `email: ${summary.deliveries.sent} sent, ${summary.deliveries.failed} failed${failures}${subscriberFailures}`,
     );
     // A broken feed or transport must not stay green: everything healthy
     // already delivered, but the run fails so the operator notices.
-    if (summary.sourceFailures.length > 0 || summary.deliveries.failed > 0) {
+    if (
+      summary.sourceFailures.length > 0 ||
+      summary.subscriberFailures.length > 0 ||
+      summary.deliveries.failed > 0
+    ) {
       process.exitCode = 1;
     }
   }
