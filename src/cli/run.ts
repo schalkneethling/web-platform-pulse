@@ -11,6 +11,8 @@ import {
   createRuntimeReleasesAdapter,
   fetchRuntimeReleases,
 } from "../adapters/runtime-releases.ts";
+import { createThemeLookup } from "../core/web-features/diff.ts";
+import { memoizeAsync } from "../core/memoize.ts";
 import { createChromeStatusAdapter, fetchChromeFeatures } from "../adapters/chrome-status.ts";
 import {
   createStandardsPositionsAdapter,
@@ -43,9 +45,12 @@ export const runPipelineCommand = async (
   const loadJson = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8")) as T;
 
   const dataPath = values.data;
-  const fetchData = dataPath
-    ? () => Promise.resolve(loadJson<WebFeaturesData>(dataPath))
-    : fetchWebFeaturesData;
+  // The web-features adapter derives its events from this data and the Chrome
+  // Platform Status adapter borrows its group graph, so it is fetched once.
+  const fetchData = memoizeAsync(
+    dataPath ? () => Promise.resolve(loadJson<WebFeaturesData>(dataPath)) : fetchWebFeaturesData,
+  );
+  const loadThemeLookup = async () => createThemeLookup(await fetchData());
 
   const releasesPath = values.releases;
   const fetchReleases = releasesPath
@@ -87,7 +92,7 @@ export const runPipelineCommand = async (
     createBrowserReleasesAdapter({ fetchReleases }),
     createRuntimeReleasesAdapter({ fetchReleases: fetchRuntimes }),
     createStandardsPositionsAdapter({ fetchPositions }),
-    createChromeStatusAdapter({ fetchFeatures: fetchChrome }),
+    createChromeStatusAdapter({ fetchFeatures: fetchChrome, loadThemeLookup }),
     createW3CSpecsAdapter({ fetchSpecs }),
     createTagReviewsAdapter({ fetchReviews }),
     createVoicesAdapter({ fetchPosts }),

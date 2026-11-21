@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type { ChromeFeature } from "../core/chrome-status/diff.ts";
-import { createChromeStatusAdapter, parseChromeFeatures } from "./chrome-status.ts";
+import { createThemeLookup, type WebFeaturesData } from "../core/web-features/diff.ts";
+import { memoizeAsync } from "../core/memoize.ts";
+import {
+  createChromeStatusAdapter,
+  parseChromeFeatures,
+  type ChromeStatusAdapterOptions,
+} from "./chrome-status.ts";
+import { createWebFeaturesAdapter } from "./web-features.ts";
 
 const fixture = (name: string): string =>
   readFileSync(new URL(`../../tests/fixtures/chrome-status/${name}`, import.meta.url), "utf8");
@@ -84,5 +91,67 @@ describe("chrome-status adapter", () => {
       "5144822362931200": "Enabled by default",
       "5633461050195968": "Enabled by default",
     });
+  });
+});
+
+describe("chrome-status adapter taxonomy", () => {
+  const webFeatures: WebFeaturesData = {
+    groups: { css: { name: "CSS" }, webgl: { name: "WebGL" } },
+    features: {
+      "anchor-positioning": {
+        kind: "feature",
+        name: "Anchor positioning",
+        group: ["webgl"],
+        status: { baseline: false, support: {} },
+      },
+    },
+  };
+
+  const run = async (options: Pick<ChromeStatusAdapterOptions, "loadThemeLookup">) => {
+    const seeded = await createChromeStatusAdapter({
+      fetchFeatures: () => Promise.resolve(loadFeatures("old.json")),
+    }).run(null);
+    const { events } = await createChromeStatusAdapter({
+      fetchFeatures: () => Promise.resolve(loadFeatures("new.json")),
+      ...options,
+    }).run(seeded.cursor);
+    return Object.fromEntries(
+      events.map((e) => [e.subject.kind === "feature" ? e.subject.id : "", e.taxonomy]),
+    );
+  };
+
+  it("uses the web-features themes when the lookup knows the id (hit)", async () => {
+    const byFeature = await run({
+      loadThemeLookup: () => Promise.resolve(createThemeLookup(webFeatures)),
+    });
+    expect(byFeature["anchor-positioning"]).toEqual(["api"]); // category says CSS
+  });
+
+  it("keeps category themes for ids the lookup does not know (miss)", async () => {
+    const byFeature = await run({
+      loadThemeLookup: () => Promise.resolve(createThemeLookup(webFeatures)),
+    });
+    expect(byFeature["mutation-events"]).toEqual(["javascript"]);
+    expect(byFeature["chromestatus/5766411463082496"]).toEqual(["api"]);
+  });
+
+  it("uses category themes when no lookup is supplied", async () => {
+    const byFeature = await run({});
+    expect(byFeature["anchor-positioning"]).toEqual(["css"]);
+  });
+
+  it("still runs on category themes when the web-features fetch fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchData = memoizeAsync<WebFeaturesData>(() => Promise.reject(new Error("503")));
+    const webFeaturesAdapter = createWebFeaturesAdapter({ fetchData });
+    await expect(webFeaturesAdapter.run(null)).rejects.toThrow("503");
+
+    const byFeature = await run({
+      loadThemeLookup: async () => createThemeLookup(await fetchData()),
+    });
+    expect(byFeature["anchor-positioning"]).toEqual(["css"]);
+    expect(Object.keys(byFeature)).toHaveLength(3);
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 });

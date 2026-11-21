@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { deriveChromeStatusIndex, diffChromeStatus, type ChromeFeature } from "./diff.ts";
+import {
+  deriveChromeStatusIndex,
+  diffChromeStatus,
+  type ChromeFeature,
+  type ThemeLookup,
+} from "./diff.ts";
 
 const feature = (overrides: Partial<ChromeFeature>): ChromeFeature => ({
   id: "5144822362931200",
@@ -96,5 +101,44 @@ describe("diffChromeStatus", () => {
     expect(title("In development", null)).toBe("X in development for Chrome");
     expect(title("Enabled by default", null)).toBe("X shipped in Chrome");
     expect(title("On hold", null)).toBe("Chrome status for X: On hold");
+  });
+});
+
+describe("diffChromeStatus taxonomy", () => {
+  const changed = (overrides: Partial<ChromeFeature>, themesForWebFeature?: ThemeLookup) =>
+    diffChromeStatus({ "5144822362931200": "Origin trial" }, [feature(overrides)], {
+      observedAt: OBSERVED_AT,
+      ...(themesForWebFeature && { themesForWebFeature }),
+    })[0]?.taxonomy;
+
+  it("uses the web-features themes when the lookup knows the feature", () => {
+    expect(changed({ category: "CSS" }, () => ["api", "html"])).toEqual(["api", "html"]);
+  });
+
+  it("asks the lookup with the feature's web-features id", () => {
+    const asked: string[] = [];
+    changed({ webFeature: "anchor-positioning" }, (id) => {
+      asked.push(id);
+      return undefined;
+    });
+    expect(asked).toEqual(["anchor-positioning"]);
+  });
+
+  it("keeps the category theme when the lookup has no answer", () => {
+    expect(changed({ category: "HTML" }, () => undefined)).toEqual(["html"]);
+  });
+
+  it("keeps the category theme and never asks when the feature has no web-features id", () => {
+    let asked = false;
+    const taxonomy = changed({ webFeature: null, category: "JavaScript" }, () => {
+      asked = true;
+      return ["css"];
+    });
+    expect(taxonomy).toEqual(["javascript"]);
+    expect(asked).toBe(false);
+  });
+
+  it("keeps the category theme when there is no lookup", () => {
+    expect(changed({ category: "DOM" })).toEqual(["api"]);
   });
 });
