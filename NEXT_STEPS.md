@@ -52,8 +52,9 @@ What Slice F deliberately leaves out:
 
 - **A per-subscriber reader view.** Other subscribers get their digest by
   email and have no page of their own. Showing them one needs real
-  authentication (Supabase Auth, `auth.uid()` predicates on `digest`), and
-  Slice G needs an authenticated operator anyway, so the two land together.
+  authentication (Supabase Auth, `auth.uid()` predicates on `digest`).
+  Slice G added that authentication for the operator only, so the view is
+  still to build.
 - **A subscription settings page.** `taxonomies`, `significance_floor` and
   `cadence` exist per subscriber, but only SQL can change them today. The
   same authentication unlocks it.

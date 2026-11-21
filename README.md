@@ -79,21 +79,21 @@ but without those two the page can only render its error state.
 The pipeline CLI (`vp run pulse`) pulls live data when run without flags.
 Useful flags and environment variables:
 
-| Flag / env                           | Purpose                                                     |
-| ------------------------------------ | ----------------------------------------------------------- |
-| `--data <path>`                      | Web-features fixture instead of the live artifact           |
-| `--releases <path>`                  | Browser-release fixture instead of the live feeds           |
-| `--runtimes <path>`                  | Runtime-release fixture instead of the live feeds           |
-| `--positions <path>`                 | Standards-positions fixture instead of the live feeds       |
-| `--chrome <path>`                    | Chrome Platform Status fixture instead of the live feed     |
-| `--specs <path>`                     | W3C spec-transition fixture instead of the live feeds       |
-| `--tag-reviews <path>`               | TAG design-review fixture instead of the live issues API    |
-| `--voices <path>`                    | Voices fixture instead of the live blog feeds               |
-| `--email` / `PULSE_SUBSCRIBER_EMAIL` | The operator's address; changing it re-points the reader    |
-| `--smtp` / `PULSE_SMTP_URL`          | SMTP transport; omit it and email is skipped                |
-| `PULSE_EMAIL_FROM`                   | Sender address                                              |
-| `PULSE_PUBLIC_URL`                   | The reader's origin; confirm and unsubscribe links use it   |
-| `DATABASE_URL`                       | Postgres connection (defaults to the local Docker instance) |
+| Flag / env                           | Purpose                                                                                 |
+| ------------------------------------ | --------------------------------------------------------------------------------------- |
+| `--data <path>`                      | Web-features fixture instead of the live artifact                                       |
+| `--releases <path>`                  | Browser-release fixture instead of the live feeds                                       |
+| `--runtimes <path>`                  | Runtime-release fixture instead of the live feeds                                       |
+| `--positions <path>`                 | Standards-positions fixture instead of the live feeds                                   |
+| `--chrome <path>`                    | Chrome Platform Status fixture instead of the live feed                                 |
+| `--specs <path>`                     | W3C spec-transition fixture instead of the live feeds                                   |
+| `--tag-reviews <path>`               | TAG design-review fixture instead of the live issues API                                |
+| `--voices <path>`                    | Voices fixture instead of the live blog feeds                                           |
+| `--email` / `PULSE_SUBSCRIBER_EMAIL` | The operator's address; changing it re-points the reader and clears the `operator link` |
+| `--smtp` / `PULSE_SMTP_URL`          | SMTP transport; omit it and email is skipped                                            |
+| `PULSE_EMAIL_FROM`                   | Sender address                                                                          |
+| `PULSE_PUBLIC_URL`                   | The reader's origin; confirm and unsubscribe links use it                               |
+| `DATABASE_URL`                       | Postgres connection (defaults to the local Docker instance)                             |
 
 Every variable in the table is an item in `.env.schema`; setting it in the
 shell overrides what Varlock resolves.
