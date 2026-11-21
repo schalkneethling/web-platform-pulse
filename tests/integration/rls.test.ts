@@ -3,6 +3,7 @@
 // These run against the real policies rather than a REST layer: `set local
 // role anon` inside a transaction puts the session on the same footing as
 // PostgREST's anon request, which is what the browser bundle will be.
+import { readFileSync } from "node:fs";
 import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import type { CandidateEvent } from "../../src/core/types.ts";
 import { type Queryable, connect } from "../../src/store/db.ts";
@@ -350,6 +351,51 @@ describe("the policy layer itself", () => {
       { tablename: "issue", cmd: "SELECT", roles: ["authenticated"] },
       { tablename: "issue_item", cmd: "SELECT", roles: ["authenticated"] },
     ]);
+  });
+
+  const anonTablePrivileges = (db: Queryable) => db<{ relname: string; privilege: string }[]>`
+    select c.relname, p.privilege
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join (values ('select'), ('insert'), ('update'), ('delete'), ('truncate'),
+                       ('references'), ('trigger')) as p(privilege)
+    where n.nspname = 'public' and c.relkind = 'r' and c.relname <> '_migration'
+      and has_table_privilege('anon', c.oid, p.privilege)
+    order by c.relname, p.privilege
+  `;
+
+  const ANON_SELECT_ONLY = [
+    { relname: "change_event", privilege: "select" },
+    { relname: "digest_item", privilege: "select" },
+    { relname: "event_source", privilege: "select" },
+  ];
+
+  it("leaves anon with select on three tables and no other table privilege", async () => {
+    // digest is absent on purpose: anon reads it through a column-level
+    // grant, which has_table_privilege does not count.
+    expect(await anonTablePrivileges(sql)).toEqual(ANON_SELECT_ONLY);
+  });
+
+  it("withdraws the table privileges a Supabase project hands anon by default", async () => {
+    // The local database grants nothing by default, so the state production
+    // was found in is recreated here before migration 11 is run again. The
+    // transaction is rolled back, so no other test sees the wide grant.
+    const migration = readFileSync(
+      new URL("../../supabase/migrations/00000000000011_anon_select_only.sql", import.meta.url),
+      "utf8",
+    );
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`grant all on change_event, event_source, digest_item to anon`;
+        const wide = await anonTablePrivileges(tx);
+        expect(wide).toContainEqual({ relname: "change_event", privilege: "truncate" });
+
+        await tx.unsafe(migration);
+
+        expect(await anonTablePrivileges(tx)).toEqual(ANON_SELECT_ONLY);
+        throw new Error("roll back");
+      }),
+    ).rejects.toThrow("roll back");
   });
 
   it("gives authenticated select on four tables and no write privilege anywhere", async () => {
