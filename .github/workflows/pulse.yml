@@ -19,5 +19,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PULSE_SMTP_URL: ${{ secrets.PULSE_SMTP_URL }}
+          PULSE_PUBLIC_URL: ${{ secrets.PULSE_PUBLIC_URL }}
           PULSE_SUBSCRIBER_EMAIL: ${{ secrets.PULSE_SUBSCRIBER_EMAIL }}
           PULSE_EMAIL_FROM: ${{ secrets.PULSE_EMAIL_FROM }}

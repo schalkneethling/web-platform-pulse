@@ -17,7 +17,7 @@ export interface EmailMessage extends EmailContent {
 /** The transport seam: SMTP locally, a provider's API in production. */
 export type SendEmail = (message: EmailMessage) => Promise<void>;
 
-const escapeHtml = (value: string): string =>
+export const escapeHtml = (value: string): string =>
   value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")

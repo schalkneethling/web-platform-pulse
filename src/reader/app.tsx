@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { DigestView } from "../core/digest.ts";
 import { DigestArticle } from "./digest-article.tsx";
 import { fetchLatestDigest } from "./digest-source.ts";
+import { SignupForm } from "./signup-form.tsx";
 import { getReaderClient } from "./supabase.ts";
 
 type LoadState =
@@ -50,6 +51,7 @@ export const App = () => {
         <p className="reader__status">The latest digest could not be loaded.</p>
       )}
       {state.status === "ready" && <DigestArticle digest={state.digest} />}
+      <SignupForm />
     </main>
   );
 };

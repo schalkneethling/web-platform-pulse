@@ -12,9 +12,10 @@ import { spawnSync } from "node:child_process";
 
 /** Every repository secret a workflow reads. Keep in step with .env.schema. */
 const SECRETS = [
-  // pulse.yml
+  // pulse.yml and confirmations.yml
   "DATABASE_URL",
   "PULSE_SMTP_URL",
+  "PULSE_PUBLIC_URL",
   "PULSE_SUBSCRIBER_EMAIL",
   "PULSE_EMAIL_FROM",
   // deploy.yml

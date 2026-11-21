@@ -160,6 +160,54 @@ export const ensureOperator = async (sql: Sql, email: string): Promise<string> =
   return subscriberId;
 };
 
+/**
+ * The public signup write path (§17). Calls the same `request_subscription`
+ * function the browser reaches through PostgREST, so the Node tests and the
+ * reader exercise one implementation. It queues a confirmation for a new or
+ * returning address and does nothing for a confirmed one; the result never
+ * says which (see migration 5).
+ */
+export const requestSubscription = async (sql: Queryable, email: string): Promise<void> => {
+  await sql`select request_subscription(${email})`;
+};
+
+export interface PendingConfirmation {
+  subscriberId: string;
+  email: string;
+  confirmToken: string;
+}
+
+/**
+ * Subscribers owed a confirmation email: not yet confirmed, not unsubscribed,
+ * and nothing sent since they were queued. Oldest first, so a flood of signups
+ * drains in the order it arrived.
+ */
+export const confirmationsAwaitingSend = async (
+  sql: Sql,
+  limit: number,
+): Promise<PendingConfirmation[]> => {
+  const rows = await sql<{ id: string; email: string; confirm_token: string }[]>`
+    select id, email, confirm_token from subscriber
+    where confirmed_at is null and unsubscribed_at is null and confirmation_sent_at is null
+    order by created_at, id
+    limit ${limit}
+  `;
+  return rows.map((row) => ({
+    subscriberId: row.id,
+    email: row.email,
+    confirmToken: row.confirm_token,
+  }));
+};
+
+/** Mark a confirmation as sent; the attempt count feeds migration 5's resend ceiling. */
+export const recordConfirmationSent = async (sql: Sql, subscriberId: string): Promise<void> => {
+  await sql`
+    update subscriber
+    set confirmation_sent_at = now(), confirmation_attempts = confirmation_attempts + 1
+    where id = ${subscriberId}
+  `;
+};
+
 const eventsWithProvenance = async (
   sql: Queryable,
   rows: ChangeEventRow[],

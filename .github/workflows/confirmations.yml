@@ -1,0 +1,31 @@
+name: Confirmations
+
+# Signup confirmation emails go out from here, not from the daily Pulse run
+# (pulse.yml, 07:00 UTC). Someone who just typed their address into the reader
+# is waiting on this message, and a confirmation that sat until the next
+# morning would arrive after they had stopped caring. This workflow only sends
+# pending confirmations; it does not fetch or digest anything.
+on:
+  schedule:
+    - cron: "*/15 * * * *" # every 15 minutes
+  workflow_dispatch: # manual trigger for testing
+
+# Two runs must never overlap: both would read the same pending rows and mail
+# each address twice. A run that finds one in progress waits for it.
+concurrency:
+  group: confirmations
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run src/cli/index.ts confirmations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PULSE_SMTP_URL: ${{ secrets.PULSE_SMTP_URL }}
+          PULSE_PUBLIC_URL: ${{ secrets.PULSE_PUBLIC_URL }}
+          PULSE_EMAIL_FROM: ${{ secrets.PULSE_EMAIL_FROM }}

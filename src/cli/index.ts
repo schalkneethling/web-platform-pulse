@@ -9,6 +9,11 @@
 //   vp run pulse -- --tag-reviews tests/fixtures/tag-reviews/new.json
 //   vp run pulse -- --voices tests/fixtures/voices/new.json
 //   vp run pulse -- --smtp smtp://localhost:54330   (or PULSE_SMTP_URL)
+//   vp run pulse confirmations   only send pending signup confirmations, then exit
+//
+// With no subcommand the run is the pipeline, followed by any pending signup
+// confirmations. Sending mail needs PULSE_SMTP_URL and PULSE_PUBLIC_URL (the
+// reader's origin, which the confirmation link is built on).
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import {
@@ -39,9 +44,11 @@ import type { VoicePost } from "../core/voices/diff.ts";
 import { createEmailChannel } from "../delivery/email.ts";
 import { createSmtpSender } from "../delivery/smtp.ts";
 import { connect } from "../store/db.ts";
+import { sendPendingConfirmations } from "./confirmations.ts";
 import { runPipeline } from "./pipeline.ts";
 
-const { values } = parseArgs({
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
   options: {
     data: { type: "string" },
     releases: { type: "string" },
@@ -115,32 +122,62 @@ const subscriberEmail =
 // Email is opt-in for the prototype: no SMTP configured means the reader
 // channel (the persisted digest) is the only delivery.
 const smtpUrl = values.smtp ?? process.env.PULSE_SMTP_URL;
-const channels = smtpUrl
-  ? [
-      createEmailChannel({
-        from: process.env.PULSE_EMAIL_FROM ?? "Platform Pulse <pulse@localhost>",
-        send: createSmtpSender(smtpUrl),
-      }),
-    ]
-  : [];
+const emailFrom = process.env.PULSE_EMAIL_FROM ?? "Platform Pulse <pulse@localhost>";
+const send = smtpUrl ? createSmtpSender(smtpUrl) : null;
+const channels = send ? [createEmailChannel({ from: emailFrom, send })] : [];
+
+const [subcommand, ...extra] = positionals;
+if (subcommand !== undefined && (subcommand !== "confirmations" || extra.length > 0)) {
+  console.error(
+    `unknown command: ${positionals.join(" ")} (the only subcommand is "confirmations")`,
+  );
+  process.exit(2);
+}
+const confirmationsOnly = subcommand === "confirmations";
+
+// A confirmation link is built on the reader's public origin. Failing here,
+// before any mail is sent, beats mailing a link that points nowhere.
+const publicUrl = process.env.PULSE_PUBLIC_URL;
+if (send && !publicUrl) {
+  console.error(
+    "PULSE_PUBLIC_URL is required when SMTP is configured: it is the base of the confirmation link.",
+  );
+  process.exit(2);
+}
+if (confirmationsOnly && !send) {
+  console.error("confirmations needs SMTP: set PULSE_SMTP_URL or pass --smtp.");
+  process.exit(2);
+}
 
 const sql = connect();
 try {
-  const summary = await runPipeline(sql, { adapters, subscriberEmail, channels });
-  const failures =
-    summary.sourceFailures.length > 0
-      ? ` | sources failed: ${summary.sourceFailures.join(", ")}`
-      : "";
-  console.log(
-    `candidates: ${summary.candidates} | created: ${summary.ingest.created}, ` +
-      `correlated: ${summary.ingest.correlated}, unchanged: ${summary.ingest.unchanged} | ` +
-      `digests: ${summary.digestIds.length > 0 ? summary.digestIds.join(", ") : "none (no closed window)"} | ` +
-      `email: ${summary.deliveries.sent} sent, ${summary.deliveries.failed} failed${failures}`,
-  );
-  // A broken feed or transport must not stay green: everything healthy
-  // already delivered, but the run fails so the operator notices.
-  if (summary.sourceFailures.length > 0 || summary.deliveries.failed > 0) {
-    process.exitCode = 1;
+  if (!confirmationsOnly) {
+    const summary = await runPipeline(sql, { adapters, subscriberEmail, channels });
+    const failures =
+      summary.sourceFailures.length > 0
+        ? ` | sources failed: ${summary.sourceFailures.join(", ")}`
+        : "";
+    console.log(
+      `candidates: ${summary.candidates} | created: ${summary.ingest.created}, ` +
+        `correlated: ${summary.ingest.correlated}, unchanged: ${summary.ingest.unchanged} | ` +
+        `digests: ${summary.digestIds.length > 0 ? summary.digestIds.join(", ") : "none (no closed window)"} | ` +
+        `email: ${summary.deliveries.sent} sent, ${summary.deliveries.failed} failed${failures}`,
+    );
+    // A broken feed or transport must not stay green: everything healthy
+    // already delivered, but the run fails so the operator notices.
+    if (summary.sourceFailures.length > 0 || summary.deliveries.failed > 0) {
+      process.exitCode = 1;
+    }
+  }
+
+  if (send && publicUrl) {
+    const confirmations = await sendPendingConfirmations(sql, {
+      send,
+      from: emailFrom,
+      publicUrl,
+    });
+    console.log(`confirmations: ${confirmations.sent} sent, ${confirmations.failed} failed`);
+    if (confirmations.failed > 0) process.exitCode = 1;
   }
 } finally {
   await sql.end();

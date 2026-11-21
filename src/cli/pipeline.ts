@@ -1,6 +1,7 @@
 import type { SourceAdapter } from "../core/adapter.ts";
 import type { DeliveryChannel } from "../core/delivery.ts";
 import type { CandidateEvent } from "../core/types.ts";
+import { scrubCredentials } from "../delivery/scrub.ts";
 import type { Sql } from "../store/db.ts";
 import {
   assembleDigest,
@@ -35,13 +36,6 @@ export interface PipelineSummary {
   digestIds: string[];
   deliveries: DeliverySummary;
 }
-
-/**
- * Transport errors can echo a connection URL whose userinfo carries
- * credentials (the SMTP password is an API key); strip that before the
- * text reaches shared CI logs.
- */
-const scrubCredentials = (message: string): string => message.replace(/\/\/[^/@\s]+@/g, "//***@");
 
 /**
  * Deliver every digest a channel has not yet sent (§10) — not just this
