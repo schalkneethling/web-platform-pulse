@@ -120,24 +120,6 @@ const adapters = [
   createVoicesAdapter({ fetchPosts }),
 ];
 
-// No fallback address: ensureOperator moves the operator flag to whatever
-// address it is given, so a guessed default would silently re-point the public
-// reader at a stranger's digest.
-const subscriberEmail = values.email ?? process.env.PULSE_SUBSCRIBER_EMAIL;
-if (!subscriberEmail) {
-  console.error(
-    "The operator address is required: set PULSE_SUBSCRIBER_EMAIL or pass --email. " +
-      "It names the operator whose digest the public reader shows.",
-  );
-  process.exit(2);
-}
-
-// Email is opt-in for the prototype: no SMTP configured means the reader
-// channel (the persisted digest) is the only delivery.
-const smtpUrl = values.smtp ?? process.env.PULSE_SMTP_URL;
-const emailFrom = process.env.PULSE_EMAIL_FROM ?? "Platform Pulse <pulse@localhost>";
-const send = smtpUrl ? createSmtpSender(smtpUrl) : null;
-
 const [subcommand, ...extra] = positionals;
 if (subcommand !== undefined && (subcommand !== "confirmations" || extra.length > 0)) {
   console.error(
@@ -146,6 +128,29 @@ if (subcommand !== undefined && (subcommand !== "confirmations" || extra.length 
   process.exit(2);
 }
 const confirmationsOnly = subcommand === "confirmations";
+
+// No fallback address: ensureOperator moves the operator flag to whatever
+// address it is given, so a guessed default would silently re-point the public
+// reader at a stranger's digest. Only the pipeline needs it. `confirmations`
+// never touches the operator, so its workflow is not handed the address.
+const requireOperatorEmail = (): string => {
+  const email = values.email ?? process.env.PULSE_SUBSCRIBER_EMAIL;
+  if (!email) {
+    console.error(
+      "The operator address is required: set PULSE_SUBSCRIBER_EMAIL or pass --email. " +
+        "It names the operator whose digest the public reader shows.",
+    );
+    process.exit(2);
+  }
+  return email;
+};
+const operatorEmail = confirmationsOnly ? null : requireOperatorEmail();
+
+// Email is opt-in for the prototype: no SMTP configured means the reader
+// channel (the persisted digest) is the only delivery.
+const smtpUrl = values.smtp ?? process.env.PULSE_SMTP_URL;
+const emailFrom = process.env.PULSE_EMAIL_FROM ?? "Platform Pulse <pulse@localhost>";
+const send = smtpUrl ? createSmtpSender(smtpUrl) : null;
 
 // Confirmation and unsubscribe links are built on the reader's public origin. Failing here,
 // before any mail is sent, beats mailing a link that points nowhere.
@@ -166,8 +171,12 @@ const channels =
 
 const sql = connect();
 try {
-  if (!confirmationsOnly) {
-    const summary = await runPipeline(sql, { adapters, subscriberEmail, channels });
+  if (operatorEmail !== null) {
+    const summary = await runPipeline(sql, {
+      adapters,
+      subscriberEmail: operatorEmail,
+      channels,
+    });
     const failures =
       summary.sourceFailures.length > 0
         ? ` | sources failed: ${summary.sourceFailures.join(", ")}`
