@@ -13,6 +13,7 @@ import {
   type PublishRequirement,
   recordIssueDelivery,
   subscribersAwaitingIssue,
+  withIssueSendLock,
 } from "../store/issue.ts";
 import type { CliValues } from "./command.ts";
 import { readSettings, requireMail, type ConfigResult, type MailConfig } from "./config.ts";
@@ -201,6 +202,26 @@ const sendOwedIssues = async (
   return { ok, attempted };
 };
 
+/**
+ * Holds the issue-send lock for the whole of a run that sends. A run that
+ * cannot get it says so and returns false (exit 1) without touching the
+ * database or the mail transport, because the run that holds it is already
+ * sending to the same subscribers.
+ */
+const underSendLock = async (
+  sql: Sql,
+  write: (line: string) => void,
+  run: () => Promise<boolean>,
+): Promise<boolean> => {
+  const outcome = await withIssueSendLock(sql, run);
+  if (outcome.acquired) return outcome.value;
+  write(
+    "Another issue publish or retry is already running, so this run sent nothing. " +
+      "Run it again when the other has finished.",
+  );
+  return false;
+};
+
 const requirementText: Record<PublishRequirement, string> = {
   title: "a title",
   content: "at least one included item or an intro",
@@ -221,10 +242,16 @@ const requirementText: Record<PublishRequirement, string> = {
  * Returns false when there was no draft, the draft was refused or any send
  * failed, which the dispatcher turns into exit code 1.
  */
-export const runIssuePublish = async (
+export const runIssuePublish = (
   sql: Sql,
   deps: PublishDeps,
   write: (line: string) => void = console.log,
+): Promise<boolean> => underSendLock(sql, write, () => publishAndSend(sql, deps, write));
+
+const publishAndSend = async (
+  sql: Sql,
+  deps: PublishDeps,
+  write: (line: string) => void,
 ): Promise<boolean> => {
   const publication = await publishDraft(sql);
   if (publication.outcome === "no-draft") {
@@ -258,14 +285,15 @@ export const runIssuePublish = async (
  * is safe to run while next week's draft is open. Returns false when any send
  * failed.
  */
-export const runIssueRetry = async (
+export const runIssueRetry = (
   sql: Sql,
   deps: PublishDeps,
   write: (line: string) => void = console.log,
-): Promise<boolean> => {
-  if ((await listPublishedIssues(sql)).length === 0) {
-    write("There is no published issue, so there is nothing to retry.");
-    return true;
-  }
-  return (await sendOwedIssues(sql, deps, write)).ok;
-};
+): Promise<boolean> =>
+  underSendLock(sql, write, async () => {
+    if ((await listPublishedIssues(sql)).length === 0) {
+      write("There is no published issue, so there is nothing to retry.");
+      return true;
+    }
+    return (await sendOwedIssues(sql, deps, write)).ok;
+  });

@@ -15,6 +15,7 @@ import {
   openIssue,
   publishDraft,
   setHeading,
+  withIssueSendLock,
 } from "../../src/store/issue.ts";
 import {
   confirmSubscription,
@@ -559,5 +560,96 @@ describe("issue publish after an older issue failed", () => {
       { number: 1, status: "published" },
       { number: 2, status: "published" },
     ]);
+  });
+});
+
+describe("two runs at once", () => {
+  const SUBSCRIBERS = 6;
+
+  /** A sender slow enough that two unlocked runs would read the same owed list. */
+  const slowRecorder = () => {
+    const sent: string[] = [];
+    const send: SendEmail = async (message) => {
+      sent.push(message.to);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    };
+    return { sent, send };
+  };
+
+  const signUpMany = async () => {
+    for (let index = 0; index < SUBSCRIBERS; index += 1) await signUp(`s${index}@example.com`);
+  };
+
+  const exactlyOnceEach = (sent: string[]) => {
+    expect(sent.sort()).toEqual(
+      Array.from({ length: SUBSCRIBERS }, (_, index) => `s${index}@example.com`),
+    );
+  };
+
+  it("lets one publish send and tells the other it did not get the lock", async () => {
+    await signUpMany();
+    await openAnnotatedDraft();
+    const { sent, send } = slowRecorder();
+    const linesA: string[] = [];
+    const linesB: string[] = [];
+
+    const [a, b] = await Promise.all([
+      runIssuePublish(sql, deps(send), (line) => linesA.push(line)),
+      runIssuePublish(sql, deps(send), (line) => linesB.push(line)),
+    ]);
+
+    exactlyOnceEach(sent);
+    expect(a !== b).toBe(true);
+    const [winner, loser] = a ? [linesA, linesB] : [linesB, linesA];
+    expect(winner).toContain(`issue #1: ${SUBSCRIBERS} sent, 0 failed`);
+    expect(loser.join("\n")).toMatch(/another issue publish or retry is already running/i);
+    expect(
+      await sql`select count(*)::int as n from issue_delivery where status = 'sent'`,
+    ).toMatchObject([{ n: SUBSCRIBERS }]);
+  });
+
+  it("lets one retry send and tells the other it did not get the lock", async () => {
+    await signUpMany();
+    await openAnnotatedDraft();
+    expect(
+      (
+        await publish(
+          recorder(Array.from({ length: SUBSCRIBERS }, (_, i) => `s${i}@example.com`)).send,
+        )
+      ).ok,
+    ).toBe(false);
+    const { sent, send } = slowRecorder();
+    const linesA: string[] = [];
+    const linesB: string[] = [];
+
+    const [a, b] = await Promise.all([
+      runIssueRetry(sql, deps(send), (line) => linesA.push(line)),
+      runIssueRetry(sql, deps(send), (line) => linesB.push(line)),
+    ]);
+
+    exactlyOnceEach(sent);
+    expect(a !== b).toBe(true);
+    expect([...linesA, ...linesB].join("\n")).toMatch(/is already running/);
+  });
+
+  it("releases the lock when the run is over, however it ended", async () => {
+    await expect(
+      withIssueSendLock(sql, async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+
+    expect(await withIssueSendLock(sql, async () => "again")).toEqual({
+      acquired: true,
+      value: "again",
+    });
+  });
+
+  it("refuses a second holder while the first is still running", async () => {
+    const outcome = await withIssueSendLock(sql, async () =>
+      withIssueSendLock(sql, async () => "inner"),
+    );
+
+    expect(outcome).toEqual({ acquired: true, value: { acquired: false } });
   });
 });

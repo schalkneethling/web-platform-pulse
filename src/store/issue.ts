@@ -330,3 +330,51 @@ export const setHeading = async (
 ): Promise<void> => {
   await sql`select public.issue_set_heading(${issueId}::uuid, ${title}::text, ${intro}::text)`;
 };
+
+/**
+ * An arbitrary constant naming "an issue send is running". Advisory locks are
+ * shared by every user of the database, and nothing else in this project takes
+ * one, so a single key is enough.
+ */
+const ISSUE_SEND_LOCK_KEY = 6_103_002;
+
+export type SendLockResult<T> = { acquired: true; value: T } | { acquired: false };
+
+/**
+ * Runs `run` while holding the issue-send lock, or returns `acquired: false`
+ * at once when another run already holds it.
+ *
+ * `publish` and `retry` both read the owed list and then send, so two runs at
+ * the same time would both mail every owed subscriber, and the second `sent`
+ * row would then violate the unique index and abort the run midway. The lock
+ * makes the second run stop before it reads anything.
+ *
+ * A session-level advisory lock belongs to one database connection, so it
+ * has to be taken and released on the same one, and `sql.reserve()` is what
+ * holds a single connection out of the pool. A query sent through the pool
+ * could be answered by a different connection each time, which would take the
+ * lock on one and try to release it on another. Releasing in `finally` frees
+ * it however the run ends, and if the process dies the server drops it when
+ * the connection closes. It needs a connection that lasts the whole run, so
+ * it does not work through a transaction-mode pooler (use Supabase's Session
+ * pooler or a direct connection, as the Actions workflows already do).
+ */
+export const withIssueSendLock = async <T>(
+  sql: Sql,
+  run: () => Promise<T>,
+): Promise<SendLockResult<T>> => {
+  const connection = await sql.reserve();
+  try {
+    const [row] = await connection<{ locked: boolean }[]>`
+      select pg_try_advisory_lock(${ISSUE_SEND_LOCK_KEY}::bigint) as locked
+    `;
+    if (!row!.locked) return { acquired: false };
+    try {
+      return { acquired: true, value: await run() };
+    } finally {
+      await connection`select pg_advisory_unlock(${ISSUE_SEND_LOCK_KEY}::bigint)`;
+    }
+  } finally {
+    connection.release();
+  }
+};

@@ -170,6 +170,12 @@ issue or an older one. Neither command sends anything twice: a subscriber with a
 `sent` row is never selected again, and a subscriber is retried until five sends
 have failed. A run that has a failed send exits 1.
 
+Only one `publish` or `retry` runs at a time. Each takes a Postgres advisory
+lock for the whole run, and a run that cannot get it prints that another is
+already running, sends nothing and exits 1. The lock lives as long as one
+database connection, so `DATABASE_URL` must be a direct connection or Supabase's
+Session pooler, not the Transaction pooler.
+
 `.github/workflows/issue.yml` runs `open` every Sunday at 06:00 UTC, which sends
 no mail, and lets you run `open`, `preview`, `publish` or `retry` from the
 Actions tab. Publishing is never scheduled, because the issue is worth what the
