@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { resolvePreviewConfig } from "./issue.ts";
+import { resolvePreviewConfig, resolvePublishConfig } from "./issue.ts";
 
 const complete = {
   smtp: "smtp://localhost:54330",
@@ -65,5 +65,33 @@ describe("resolvePreviewConfig", () => {
     const result = resolvePreviewConfig({}, env);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain(name);
+  });
+});
+
+describe("resolvePublishConfig", () => {
+  it("needs SMTP and the public URL but not the operator address", () => {
+    expect(
+      resolvePublishConfig(
+        {},
+        { PULSE_SMTP_URL: complete.smtp, PULSE_PUBLIC_URL: complete.publicUrl },
+      ),
+    ).toEqual({
+      ok: true,
+      smtpUrl: complete.smtp,
+      publicUrl: complete.publicUrl,
+      from: "Platform Pulse <pulse@localhost>",
+    });
+  });
+
+  it.each([
+    ["SMTP", { PULSE_PUBLIC_URL: complete.publicUrl }, "PULSE_SMTP_URL"],
+    ["the public URL", { PULSE_SMTP_URL: complete.smtp }, "PULSE_PUBLIC_URL"],
+  ])("names the setting and the command when %s is missing", (_label, env, name) => {
+    const result = resolvePublishConfig({}, env);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain(name);
+      expect(result.message).toContain("issue publish");
+    }
   });
 });

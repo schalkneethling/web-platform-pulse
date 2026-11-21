@@ -1,3 +1,4 @@
+import { sourceName } from "../core/provenance.ts";
 import { groupBySection, isUnannotated, SECTION_LABELS, type Section } from "../core/issue.ts";
 import type { IssueItemView, IssueView } from "../store/issue.ts";
 import {
@@ -57,7 +58,8 @@ const itemHtml = (item: IssueItemView, section: Section): string => {
   const url = first ? safeHttpUrl(first.url) : null;
   const title = escapeHtml(item.event.title);
   const linked = url ? `<a href="${escapeHtml(url)}">${title}</a>` : title;
-  const source = first ? ` <span class="issue-source">— ${escapeHtml(first.sourceId)}</span>` : "";
+  const name = first ? sourceName(first.url) : null;
+  const source = name ? ` <span class="issue-source">— ${escapeHtml(name)}</span>` : "";
   return [
     '    <article class="issue-item">',
     // The note is the point of the issue, so it comes first, at full body size.
@@ -78,7 +80,7 @@ const itemText = (item: IssueItemView): string => {
       : []),
     `- ${item.event.title}`,
     ...(url ? [`  ${url}`] : []),
-    ...(first ? [`  Source: ${first.sourceId}`] : []),
+    ...(first && sourceName(first.url) ? [`  Source: ${sourceName(first.url)}`] : []),
   ].join("\n");
 };
 

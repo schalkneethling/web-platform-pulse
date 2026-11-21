@@ -34,6 +34,7 @@ import { connect } from "../store/db.ts";
 import { sendPendingConfirmations } from "./confirmations.ts";
 import { runPipeline } from "./pipeline.ts";
 import type { CliValues } from "./command.ts";
+import { readSettings } from "./config.ts";
 
 export const runPipelineCommand = async (
   values: CliValues,
@@ -92,32 +93,29 @@ export const runPipelineCommand = async (
     createVoicesAdapter({ fetchPosts }),
   ];
 
+  const settings = readSettings(values, process.env);
+
   // No fallback address: ensureOperator moves the operator flag to whatever
   // address it is given, so a guessed default would silently re-point the public
   // reader at a stranger's digest. Only the pipeline needs it. `confirmations`
   // never touches the operator, so its workflow is not handed the address.
-  const requireOperatorEmail = (): string => {
-    const email = values.email ?? process.env.PULSE_SUBSCRIBER_EMAIL;
-    if (!email) {
-      console.error(
-        "The operator address is required: set PULSE_SUBSCRIBER_EMAIL or pass --email. " +
-          "It names the operator whose digest the public reader shows.",
-      );
-      process.exit(2);
-    }
-    return email;
-  };
-  const operatorEmail = confirmationsOnly ? null : requireOperatorEmail();
+  if (!confirmationsOnly && !settings.operatorEmail) {
+    console.error(
+      "The operator address is required: set PULSE_SUBSCRIBER_EMAIL or pass --email. " +
+        "It names the operator whose digest the public reader shows.",
+    );
+    process.exit(2);
+  }
+  const operatorEmail = confirmationsOnly ? null : (settings.operatorEmail ?? null);
 
   // Email is opt-in for the prototype: no SMTP configured means the reader
   // channel (the persisted digest) is the only delivery.
-  const smtpUrl = values.smtp ?? process.env.PULSE_SMTP_URL;
-  const emailFrom = process.env.PULSE_EMAIL_FROM ?? "Platform Pulse <pulse@localhost>";
-  const send = smtpUrl ? createSmtpSender(smtpUrl) : null;
+  const emailFrom = settings.from;
+  const send = settings.smtpUrl ? createSmtpSender(settings.smtpUrl) : null;
 
   // Confirmation and unsubscribe links are built on the reader's public origin. Failing here,
   // before any mail is sent, beats mailing a link that points nowhere.
-  const publicUrl = process.env.PULSE_PUBLIC_URL;
+  const publicUrl = settings.publicUrl;
   if (send && !publicUrl) {
     console.error(
       "PULSE_PUBLIC_URL is required when SMTP is configured: it is the base of the confirmation and unsubscribe links.",
