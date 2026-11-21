@@ -1,7 +1,8 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { OPERATOR_EMAIL, OPERATOR_USER_ID, STRANGER_USER_ID } from "./accounts.ts";
 import { signInAs } from "./curate-session.ts";
 import { MAILPIT_API_URL, MAILPIT_SMTP_URL } from "../scripts/dev-mail.ts";
-import { runIssuePreview, runIssuePublish } from "../src/cli/issue.ts";
+import { runIssuePreview, runIssuePublish, runIssueRetry } from "../src/cli/issue.ts";
 import type { CandidateEvent } from "../src/core/types.ts";
 import { createSmtpSender } from "../src/delivery/smtp.ts";
 import { connect } from "../src/store/db.ts";
@@ -17,7 +18,7 @@ import { confirmSubscription, ingestCandidates, requestSubscription } from "../s
 // project only after issue-curation-rest.spec.ts has cleaned up its own draft.
 test.describe.configure({ mode: "serial" });
 
-const OPERATOR = "operator@example.com";
+const OPERATOR = OPERATOR_EMAIL;
 const sql = connect();
 const smtp = createSmtpSender(MAILPIT_SMTP_URL);
 
@@ -31,9 +32,9 @@ test.afterAll(async () => {
 // (see curate-session.ts). The auth server is never contacted for it; the
 // "no auth requests" assertions below keep that true.
 
-const signedInPage = async (browser: Browser, email: string, providers?: string[]) => {
+const signedInPage = async (browser: Browser, userId: string, email?: string) => {
   const context = await browser.newContext();
-  const session = await signInAs(context, email, providers);
+  const session = await signInAs(context, userId, email);
   const page = await context.newPage();
   const authRequests: string[] = [];
   page.on("request", (request) => {
@@ -103,13 +104,28 @@ const extraCandidate = (index: number): CandidateEvent => ({
   ],
 });
 
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
 const LH_TITLE = "lh unit is now Baseline widely available";
 const QUERIES_TITLE = "Container style queries is now Baseline newly available";
 
 // ---------------------------------------------------------------------------
 
 test("the operator is told how to open a draft when none is open", async ({ browser }) => {
-  const { context, page } = await signedInPage(browser, OPERATOR);
+  const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
   await page.goto("/curate");
 
   await expect(page.getByText("There is no draft issue.")).toBeVisible();
@@ -141,8 +157,14 @@ test.describe("with a draft open", () => {
     await expect(page.getByText(LH_TITLE)).toHaveCount(0);
   });
 
-  test("a signed-in account that is not the operator sees no issue data", async ({ browser }) => {
-    const { context, page, authRequests } = await signedInPage(browser, "stranger@example.com");
+  test("a signed-in account that is not the operator sees no issue data, only its own user id", async ({
+    browser,
+  }) => {
+    const { context, page, authRequests } = await signedInPage(
+      browser,
+      STRANGER_USER_ID,
+      "stranger@example.com",
+    );
     await page.goto("/curate");
 
     await expect(page.getByText("This account is not the operator.")).toBeVisible();
@@ -150,17 +172,24 @@ test.describe("with a draft open", () => {
     await expect(page.getByText("Issue #1")).toHaveCount(0);
     await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveCount(0);
     await expect(page.getByText(extraTitle(1))).toHaveCount(0);
+
+    // The account's id is shown so the operator can run `operator link` with
+    // it. Nothing else about the account is: not the address the session holds.
+    await expect(page.getByText(/operator link/)).toBeVisible();
+    await expect(page.locator("code", { hasText: STRANGER_USER_ID })).toHaveCount(1);
+    await expect(page.getByText("stranger@example.com")).toHaveCount(0);
     expect(authRequests).toEqual([]);
     await context.close();
   });
 
-  test("the operator's address without a Google sign-in is not the operator", async ({
+  test("the operator's address under another account's id is not the operator", async ({
     browser,
   }) => {
-    const { context, page } = await signedInPage(browser, OPERATOR, ["email"]);
+    const { context, page } = await signedInPage(browser, STRANGER_USER_ID, OPERATOR);
     await page.goto("/curate");
 
     await expect(page.getByText("This account is not the operator.")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveCount(0);
     await context.close();
   });
 
@@ -172,7 +201,7 @@ test.describe("with a draft open", () => {
     await anonymousPage.goto("/");
     const publicText = await anonymousPage.getByRole("article").innerText();
 
-    const { context, page, session, authRequests } = await signedInPage(browser, OPERATOR);
+    const { context, page, session, authRequests } = await signedInPage(browser, OPERATOR_USER_ID);
     const restHeaders: Record<string, string>[] = [];
     page.on("request", async (request) => {
       if (request.url().includes("/rest/v1/")) restHeaders.push(await request.allHeaders());
@@ -204,7 +233,7 @@ test.describe("with a draft open", () => {
   test("the list shows the first 50 events outside the issue and pages through the rest", async ({
     browser,
   }) => {
-    const { context, page } = await signedInPage(browser, OPERATOR);
+    const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
     await page.goto("/curate");
 
     // Twelve items are in the issue; 130 events fall in the window.
@@ -228,7 +257,7 @@ test.describe("with a draft open", () => {
     browser,
   }) => {
     const title = extraTitle(20);
-    const { context, page } = await signedInPage(browser, OPERATOR);
+    const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
     await page.goto("/curate");
 
     const row = item(page, title);
@@ -271,13 +300,278 @@ test.describe("with a draft open", () => {
     await context.close();
   });
 
+  test("a load failure is announced through a status region that was already on the page", async ({
+    browser,
+  }) => {
+    const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
+    // Records the text of every status region at the moment it is inserted. A
+    // live region only announces changes to a region that already exists, so
+    // an error that arrives inside a freshly inserted region is not announced.
+    await page.addInitScript(() => {
+      const inserted: string[] = [];
+      (window as unknown as { insertedStatusRegions: string[] }).insertedStatusRegions = inserted;
+      new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes) {
+            if (!(node instanceof Element)) continue;
+            const regions = node.matches('[role="status"]')
+              ? [node]
+              : [...node.querySelectorAll('[role="status"]')];
+            for (const region of regions) inserted.push(region.textContent ?? "");
+          }
+        }
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await page.route("**/rest/v1/rpc/is_operator_request", (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: '{"message":"boom"}' }),
+    );
+    await page.goto("/curate");
+
+    await expect(
+      page.getByRole("status").filter({ hasText: "The issue could not be loaded." }),
+    ).toBeVisible();
+    const inserted = await page.evaluate(
+      () => (window as unknown as { insertedStatusRegions: string[] }).insertedStatusRegions,
+    );
+    // The region arrived saying "Loading…" and its text was replaced; no
+    // region was ever inserted already holding the error.
+    expect(inserted.length).toBeGreaterThan(0);
+    expect(inserted.filter((text) => text.includes("could not be loaded"))).toEqual([]);
+    await context.close();
+  });
+
+  test("a failed include says the checkbox went back, and a failed note says the text is still there", async ({
+    browser,
+  }) => {
+    const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
+    await page.route("**/rest/v1/rpc/issue_include_event", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: '{"code":"XX000","message":"include is down"}',
+      }),
+    );
+    await page.route("**/rest/v1/rpc/issue_annotate_item", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: '{"code":"XX000","message":"annotate is down"}',
+      }),
+    );
+    await page.goto("/curate");
+
+    const candidate = extraTitle(40);
+    // A click, not `check()`: the box goes back, which `check()` treats as a failure.
+    await item(page, candidate).getByLabel("Include in the issue").click();
+    await expect(savedStatus(page, candidate)).toHaveText(
+      "Not saved: include is down The checkbox is back to what is saved.",
+    );
+    // The message is true: the box really is back, and nothing was typed.
+    await expect(item(page, candidate).getByLabel("Include in the issue")).not.toBeChecked();
+    await expect(savedStatus(page, candidate)).not.toContainText("typed");
+
+    // A pre-filled item is already included, so its note can be typed.
+    const included = item(page, QUERIES_TITLE);
+    await included.getByLabel("Note").fill("This will not save.");
+    await included.getByLabel("Note").blur();
+    await expect(savedStatus(page, QUERIES_TITLE)).toHaveText(
+      "Not saved: annotate is down What you typed is still here.",
+    );
+    await expect(included.getByLabel("Note")).toHaveValue("This will not save.");
+    await context.close();
+  });
+
+  for (const timezoneId of ["Pacific/Kiritimati", "Pacific/Pago_Pago"]) {
+    test(`the window is shown in UTC and says so, in a browser set to ${timezoneId}`, async ({
+      browser,
+    }) => {
+      // UTC+14 and UTC-11: at any instant at least one of them is on a different
+      // calendar day from UTC, so a page that used the browser's zone shows a
+      // different date in at least one of these two tests.
+      const context = await browser.newContext({ timezoneId });
+      await signInAs(context, OPERATOR_USER_ID);
+      const page = await context.newPage();
+      await page.goto("/curate");
+
+      const [issue] = await sql<{ window_start: Date; window_end: Date }[]>`
+        select window_start, window_end from issue where status = 'draft'
+      `;
+      const utcDay = (date: Date): string =>
+        `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+      await expect(page.locator(".curation__window")).toContainText(
+        `Covering ${utcDay(issue!.window_start)} to ${utcDay(issue!.window_end)} (UTC).`,
+      );
+      await context.close();
+    });
+  }
+
+  test.describe("leaving the page", () => {
+    /** What the browser would do on leaving: true when a handler cancels `beforeunload`. */
+    const wouldWarn = (page: Page) =>
+      page.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+
+    test("warns only while a field has unsaved or in-flight changes", async ({ browser }) => {
+      const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
+      await page.goto("/curate");
+      const row = item(page, QUERIES_TITLE);
+      await expect(row.getByLabel("Note")).toBeVisible();
+      expect(await wouldWarn(page)).toBe(false);
+
+      // Typed but not saved yet: the note saves on blur.
+      await row.getByLabel("Note").fill("Typed, not yet saved.");
+      await expect.poll(() => wouldWarn(page)).toBe(true);
+
+      // In flight: the request is held so the window is observable.
+      let release = () => {};
+      const held = new Promise<void>((resolve) => (release = resolve));
+      await page.route("**/rest/v1/rpc/issue_annotate_item", async (route) => {
+        await held;
+        await route.continue();
+      });
+      await row.getByLabel("Note").blur();
+      await expect(savedStatus(page, QUERIES_TITLE)).toHaveText("Saving…");
+      expect(await wouldWarn(page)).toBe(true);
+      release();
+      await expect(savedStatus(page, QUERIES_TITLE)).toHaveText("Saved.");
+      await expect.poll(() => wouldWarn(page)).toBe(false);
+
+      // The heading counts too, and so does a checkbox that is being saved.
+      await page.getByRole("textbox", { name: "Title", exact: true }).fill("Half-typed title");
+      await expect.poll(() => wouldWarn(page)).toBe(true);
+      await page.getByRole("textbox", { name: "Title", exact: true }).blur();
+      await expect(page.locator("#heading-status")).toHaveText("Saved.");
+      await expect.poll(() => wouldWarn(page)).toBe(false);
+      await context.close();
+    });
+
+    test("keeps warning after a save failed, because the text is still unsaved", async ({
+      browser,
+    }) => {
+      const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
+      await page.route("**/rest/v1/rpc/issue_annotate_item", (route) =>
+        route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: '{"code":"XX000","message":"down"}',
+        }),
+      );
+      await page.goto("/curate");
+      const row = item(page, QUERIES_TITLE);
+      await row.getByLabel("Note").fill("Will not save.");
+      await row.getByLabel("Note").blur();
+      await expect(savedStatus(page, QUERIES_TITLE)).toContainText("Not saved");
+      expect(await wouldWarn(page)).toBe(true);
+      await context.close();
+    });
+
+    test("the browser asks before closing a page with an unsaved note, and not otherwise", async ({
+      browser,
+    }) => {
+      const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
+      await page.goto("/curate");
+      const row = item(page, QUERIES_TITLE);
+      // Chrome shows the prompt only to a page the person has interacted with;
+      // a click counts as that, where `fill` alone does not.
+      await row.getByLabel("Note").click();
+      await row.getByLabel("Note").fill("Unsaved on purpose.");
+      await expect.poll(() => wouldWarn(page)).toBe(true);
+
+      // With `runBeforeUnload`, close returns at once and the page stays open
+      // until the prompt is answered, so the prompt is waited for.
+      const prompt = page.waitForEvent("dialog");
+      await page.close({ runBeforeUnload: true });
+      const dialog = await prompt;
+      expect(dialog.type()).toBe("beforeunload");
+      await dialog.dismiss();
+      expect(page.isClosed()).toBe(false);
+
+      // Nothing pending, nothing asked: the page just closes.
+      const clean = await context.newPage();
+      const dialogs: string[] = [];
+      clean.on("dialog", (other) => dialogs.push(other.type()));
+      await clean.goto("/curate");
+      await expect(item(clean, QUERIES_TITLE).getByLabel("Note")).toBeVisible();
+      await clean.click("body");
+      const closed = clean.waitForEvent("close");
+      await clean.close({ runBeforeUnload: true });
+      await closed;
+      expect(dialogs).toEqual([]);
+      await context.close();
+    });
+  });
+
+  test("a save from a page that is out of date does not overwrite the other field of a pair", async ({
+    browser,
+  }) => {
+    const title = extraTitle(30);
+    const context = await browser.newContext();
+    await signInAs(context, OPERATOR_USER_ID);
+    const fresh = await context.newPage();
+    await fresh.goto("/curate");
+    await item(fresh, title).getByLabel("Include in the issue").check();
+    await expect(savedStatus(fresh, title)).toHaveText("Saved.");
+
+    // The second page loads now, so it holds an empty note, the section the
+    // include assigned, and an empty title and intro.
+    const stale = await context.newPage();
+    await stale.goto("/curate");
+    await expect(item(stale, title).getByLabel("Include in the issue")).toBeChecked();
+
+    const row = async () =>
+      (
+        await sql<{ note: string | null; section: string }[]>`
+          select i.note, i.section from issue_item i join change_event e on e.id = i.event_id
+          where e.title = ${title}
+        `
+      )[0]!;
+
+    // The fresh page writes a note. The stale page then changes only the
+    // section, and the note must survive.
+    await item(fresh, title).getByLabel("Note").fill("Written on the fresh page.");
+    await item(fresh, title).getByLabel("Note").blur();
+    await expect(savedStatus(fresh, title)).toHaveText("Saved.");
+    await item(stale, title).getByLabel("Section").selectOption("watch");
+    await expect(savedStatus(stale, title)).toHaveText("Saved.");
+    expect(await row()).toEqual({ note: "Written on the fresh page.", section: "watch" });
+
+    // And the other way round: the fresh page's section is out of date now.
+    await item(fresh, title).getByLabel("Note").fill("Rewritten on the fresh page.");
+    await item(fresh, title).getByLabel("Note").blur();
+    await expect(savedStatus(fresh, title)).toHaveText("Saved.");
+    expect(await row()).toEqual({ note: "Rewritten on the fresh page.", section: "watch" });
+
+    // The heading pair behaves the same way.
+    const heading = async () =>
+      (await sql<{ title: string; intro: string }[]>`select title, intro from issue`)[0]!;
+    await fresh.getByRole("textbox", { name: "Title", exact: true }).fill("Set on the fresh page");
+    await fresh.getByRole("textbox", { name: "Title", exact: true }).blur();
+    await expect(fresh.locator("#heading-status")).toHaveText("Saved.");
+    await stale.getByRole("textbox", { name: "Intro", exact: true }).fill("Set on the stale page.");
+    await stale.getByRole("textbox", { name: "Intro", exact: true }).blur();
+    await expect(stale.locator("#heading-status")).toHaveText("Saved.");
+    expect(await heading()).toEqual({
+      title: "Set on the fresh page",
+      intro: "Set on the stale page.",
+    });
+
+    await fresh.getByRole("textbox", { name: "Title", exact: true }).fill("Changed again");
+    await fresh.getByRole("textbox", { name: "Title", exact: true }).blur();
+    await expect(fresh.locator("#heading-status")).toHaveText("Saved.");
+    expect(await heading()).toEqual({ title: "Changed again", intro: "Set on the stale page." });
+    await context.close();
+  });
+
   test("the operator curates the issue, previews it, publishes it and sees the draft close", async ({
     browser,
   }) => {
     test.setTimeout(240_000);
     const included = extraTitle(10);
     const note = "This is why anchor positioning matters to you.";
-    const { context, page, authRequests } = await signedInPage(browser, OPERATOR);
+    const { context, page, authRequests } = await signedInPage(browser, OPERATOR_USER_ID);
     await page.goto("/curate");
     await expect(page.getByRole("heading", { name: "Issue #1 (draft)" })).toBeVisible();
 
@@ -393,11 +687,11 @@ test.describe("with a draft open", () => {
     }
     expect(email.text).not.toContain("[Preview]");
 
-    // A second publish sends nothing.
+    // A retry sends nothing, because everyone already has the issue.
     const sentBefore = (await inbox()).length;
     const secondLines: string[] = [];
-    expect(await runIssuePublish(sql, publishDeps, (line) => secondLines.push(line))).toBe(true);
-    expect(secondLines.join("\n")).toContain("already published");
+    expect(await runIssueRetry(sql, publishDeps, (line) => secondLines.push(line))).toBe(true);
+    expect(secondLines.join("\n")).toContain("nothing is waiting to be sent");
     expect(await messagesTo(reader)).toHaveLength(1);
     expect((await inbox()).length).toBe(sentBefore);
 

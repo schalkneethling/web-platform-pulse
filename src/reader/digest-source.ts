@@ -10,7 +10,11 @@
 // since. The query names no subscriber because anon cannot read `subscriber`
 // and has no column grant on digest.subscriber_id. Other subscribers receive
 // their filtered digest by email and have no reader view; that would need
-// real authentication, which is deferred to Slice G.
+// per-subscriber authentication, which no slice has delivered yet. Slice G
+// signs the operator in at /curate, but it maps one auth user to one subscriber
+// (the operator) and gives `authenticated` no digest policy, so a subscriber who
+// signs in still sees nothing here. NEXT_STEPS.md lists it under what Slice G
+// leaves out.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DigestView } from "../core/digest.ts";
 import type { ChangeEvent, ChangeEventType, Provenance, Subject } from "../core/types.ts";

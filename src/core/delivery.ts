@@ -7,7 +7,15 @@ export interface Recipient {
   unsubscribeToken: string;
 }
 
-export type DeliveryResult = { status: "sent" } | { status: "failed"; error: string };
+export type DeliveryResult =
+  | { status: "sent" }
+  | {
+      status: "failed";
+      /** The full reason, for the database. It may name the recipient. */
+      error: string;
+      /** The part of the reason that is safe to print to a shared log: no address. */
+      diagnostic: string;
+    };
 
 /**
  * Delivery sits behind a channel interface (§10) so channels are additive

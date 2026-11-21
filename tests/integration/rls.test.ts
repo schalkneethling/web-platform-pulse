@@ -13,7 +13,9 @@ import {
   ensureOperator,
   ensureSource,
   ingestCandidates,
+  linkOperator,
   requestSubscription,
+  unlinkOperator,
   unsubscribe,
 } from "../../src/store/store.ts";
 
@@ -49,15 +51,18 @@ const asAnon = async <T>(query: (tx: Queryable) => Promise<T>): Promise<T> =>
     return await query(tx);
   })) as T;
 
+/** The auth user `operator link` connects to the operator, and one that is not linked. */
+const OPERATOR_USER_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+const STRANGER_USER_ID = "9b2c1f55-7a3e-4d0b-8c1e-5f6a7b8c9d0e";
+
 /**
  * The claims PostgREST would set for a verified token, defaulting to the
- * operator signed in with Google. Supabase writes `app_metadata`; the user
- * edits `user_metadata`.
+ * operator's auth user. Supabase writes `sub`, `email` and `app_metadata`; the
+ * user edits `user_metadata`. Only `role` and `sub` are ever trusted.
  */
 const claimsFor = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   role: "authenticated",
-  email: "operator@example.com",
-  app_metadata: { provider: "google", providers: ["google"] },
+  sub: OPERATOR_USER_ID,
   ...overrides,
 });
 
@@ -79,6 +84,7 @@ beforeEach(async () => {
   await sql`truncate issue, change_event, event_source, digest, digest_item, source_state, subscription, subscriber restart identity cascade`;
   await ensureSource(sql, "web-features", "artifact-diff");
   const subscriberId = await ensureOperator(sql, "operator@example.com");
+  await linkOperator(sql, "operator@example.com", OPERATOR_USER_ID);
   await ingestCandidates(sql, [candidate()]);
   await assembleDigest(sql, subscriberId, TOMORROW);
 });
@@ -421,7 +427,7 @@ describe("the operator's curation access", () => {
 
   const readable = ["issue", "issue_item", "change_event", "event_source"] as const;
 
-  it("lets the operator signed in with Google read the four tables", async () => {
+  it("lets the operator's auth user read the four tables", async () => {
     for (const table of readable) {
       const rows = await asAuthenticated(claimsFor(), (tx) => tx.unsafe(`select * from ${table}`));
       expect(rows.length, table).toBe(1);
@@ -443,15 +449,17 @@ describe("the operator's curation access", () => {
     ]);
   });
 
-  it("answers is_operator_request true only for the operator, and false with no token", async () => {
-    const answer = (claims: Record<string, unknown>) =>
-      asAuthenticated(
-        claims,
-        async (tx) => (await tx`select public.is_operator_request() as ok`)[0]!.ok,
-      );
+  const answer = (claims: Record<string, unknown>) =>
+    asAuthenticated(
+      claims,
+      async (tx) => (await tx`select public.is_operator_request() as ok`)[0]!.ok,
+    );
+
+  it("answers is_operator_request true for the linked auth user, and false with no token", async () => {
     expect(await answer(claimsFor())).toBe(true);
-    expect(await answer(claimsFor({ email: "Operator@Example.com" }))).toBe(true);
-    expect(await answer(claimsFor({ email: "other@example.com" }))).toBe(false);
+    // A uuid is the same uuid in either case.
+    expect(await answer(claimsFor({ sub: OPERATOR_USER_ID.toUpperCase() }))).toBe(true);
+    expect(await answer(claimsFor({ sub: STRANGER_USER_ID }))).toBe(false);
 
     const noToken = await sql.begin(async (tx) => {
       await tx.unsafe("set local role authenticated");
@@ -460,29 +468,69 @@ describe("the operator's curation access", () => {
     expect(noToken).toBe(false);
   });
 
-  // Each of these presents the operator's address but fails one other check.
+  it("allows the right sub whatever email, app_metadata and user_metadata the token carries", async () => {
+    // None of them is read, so none can make a difference either way.
+    expect(
+      await answer(
+        claimsFor({
+          email: "someone-else@example.com",
+          app_metadata: { provider: "email", providers: ["email"] },
+          user_metadata: { sub: STRANGER_USER_ID },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  // The malformed values are answered, not raised: a cast of `sub` to uuid
+  // would throw on every one of them.
+  it.each([
+    ["missing", undefined],
+    ["null", null],
+    ["empty", ""],
+    ["not a uuid", "not-a-uuid"],
+    ["a uuid with a character too many", `${OPERATOR_USER_ID}0`],
+    ["a uuid in braces", `{${OPERATOR_USER_ID}}`],
+    ["a number", 12345],
+    ["an object", { id: OPERATOR_USER_ID }],
+  ])("answers false, without an error, when sub is %s", async (_name, sub) => {
+    const claims = claimsFor({ sub });
+    expect(await answer(claims)).toBe(false);
+    for (const table of readable) {
+      expect(
+        await asAuthenticated(claims, (tx) => tx.unsafe(`select * from ${table}`)),
+        table,
+      ).toHaveLength(0);
+    }
+  });
+
+  // Each of these presents something the old check trusted, or a token that
+  // fails one check, and none of them is the operator's auth user.
   const impostors: [string, Record<string, unknown>][] = [
     [
-      "the operator's email without the google provider",
-      claimsFor({ app_metadata: { provider: "email", providers: ["email"] } }),
+      "the operator's email with another auth user's sub",
+      claimsFor({ sub: STRANGER_USER_ID, email: "operator@example.com" }),
     ],
-    ["the operator's email with no app_metadata", claimsFor({ app_metadata: undefined })],
-    ["a different email that signed in with Google", claimsFor({ email: "other@example.com" })],
     [
-      "user_metadata that claims the operator while the email differs",
+      "the operator's email and a google provider with another auth user's sub",
       claimsFor({
-        email: "other@example.com",
-        user_metadata: { email: "operator@example.com", providers: ["google"] },
+        sub: STRANGER_USER_ID,
+        email: "operator@example.com",
+        app_metadata: { provider: "google", providers: ["google"] },
       }),
     ],
     [
-      "user_metadata that claims the google provider",
+      "a user_metadata that names the operator's sub while the real sub differs",
       claimsFor({
-        app_metadata: { provider: "email", providers: ["email"] },
-        user_metadata: { providers: ["google"] },
+        sub: STRANGER_USER_ID,
+        user_metadata: { sub: OPERATOR_USER_ID, email: "operator@example.com" },
       }),
     ],
-    ["a token whose role claim is anon", claimsFor({ role: "anon" })],
+    [
+      "a token with no sub that names the operator in user_metadata",
+      claimsFor({ sub: undefined, user_metadata: { sub: OPERATOR_USER_ID } }),
+    ],
+    ["the operator's sub with role anon", claimsFor({ role: "anon" })],
+    ["the operator's sub with no role", claimsFor({ role: undefined })],
   ];
 
   it.each(impostors)("denies %s", async (_name, claims) => {
@@ -510,8 +558,60 @@ describe("the operator's curation access", () => {
     ).toMatchObject([{ title: "", note: null, included: true }]);
   });
 
+  it("denies everyone while the operator is unlinked", async () => {
+    expect(await unlinkOperator(sql, "operator@example.com")).toBe("unlinked");
+
+    expect(await answer(claimsFor())).toBe(false);
+    expect(await answer(claimsFor({ sub: null }))).toBe(false);
+    expect(await asAuthenticated(claimsFor(), (tx) => tx`select id from issue`)).toHaveLength(0);
+  });
+
+  it("stops honouring the old link once ensureOperator moves the flag, until the new operator is linked", async () => {
+    expect(await answer(claimsFor())).toBe(true);
+
+    await ensureOperator(sql, "new-operator@example.com");
+
+    // The old operator's account is no longer the operator, and the new
+    // operator is nobody's account yet.
+    expect(await answer(claimsFor())).toBe(false);
+    expect(await answer(claimsFor({ sub: STRANGER_USER_ID }))).toBe(false);
+    expect(await asAuthenticated(claimsFor(), (tx) => tx`select id from issue`)).toHaveLength(0);
+    await expect(
+      asAuthenticated(claimsFor(), (tx) => setHeading(tx, issueId, "Hijacked", "")),
+    ).rejects.toThrow(/only the operator may curate an issue/);
+
+    await linkOperator(sql, "new-operator@example.com", STRANGER_USER_ID);
+    expect(await answer(claimsFor({ sub: STRANGER_USER_ID }))).toBe(true);
+    expect(await answer(claimsFor())).toBe(false);
+
+    // Moving the flag back does not bring the first link back either.
+    await ensureOperator(sql, "operator@example.com");
+    expect(await answer(claimsFor())).toBe(false);
+    expect(await answer(claimsFor({ sub: STRANGER_USER_ID }))).toBe(false);
+  });
+
+  // `using (is_operator_request())` is a call Postgres makes for every row it
+  // examines, and it cannot be skipped or hoisted because the function is
+  // `security definer`. `using ((select is_operator_request()))` is an
+  // uncorrelated subquery, which the planner runs once as an InitPlan and then
+  // reuses. The plan is the observable difference, so it is what this checks.
+  it.each(readable)(
+    "evaluates the operator check once per query, not once per row, on %s",
+    async (table) => {
+      const plan = await asAuthenticated(claimsFor(), async (tx) =>
+        (await tx.unsafe(`explain (costs off) select * from ${table}`))
+          .map((row) => String(row["QUERY PLAN"]))
+          .join("\n"),
+      );
+
+      expect(plan).toMatch(/InitPlan/);
+      // The call itself sits in the InitPlan, not in the per-row filter.
+      expect(plan).not.toMatch(/Filter: .*is_operator_request/);
+    },
+  );
+
   it("denies authenticated, operator or not, the tables a subscriber's data lives in", async () => {
-    for (const claims of [claimsFor(), claimsFor({ email: "other@example.com" })]) {
+    for (const claims of [claimsFor(), claimsFor({ sub: STRANGER_USER_ID })]) {
       for (const table of ["subscriber", "subscription", "delivery", "issue_delivery", "digest"]) {
         await expect(
           asAuthenticated(claims, (tx) => tx.unsafe(`select * from ${table}`)),

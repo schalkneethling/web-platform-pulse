@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { resolvePreviewConfig, resolvePublishConfig } from "./issue.ts";
+import { resolvePreviewConfig, resolvePublishConfig, resolveRetryConfig } from "./issue.ts";
 
 const complete = {
   smtp: "smtp://localhost:54330",
@@ -93,5 +93,19 @@ describe("resolvePublishConfig", () => {
       expect(result.message).toContain(name);
       expect(result.message).toContain("issue publish");
     }
+  });
+});
+
+describe("resolveRetryConfig", () => {
+  it("needs SMTP and the public URL, like publish, and names the retry command", () => {
+    expect(
+      resolveRetryConfig(
+        {},
+        { PULSE_SMTP_URL: complete.smtp, PULSE_PUBLIC_URL: complete.publicUrl },
+      ),
+    ).toMatchObject({ ok: true, smtpUrl: complete.smtp, publicUrl: complete.publicUrl });
+    const missing = resolveRetryConfig({}, { PULSE_PUBLIC_URL: complete.publicUrl });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.message).toContain("issue retry");
   });
 });

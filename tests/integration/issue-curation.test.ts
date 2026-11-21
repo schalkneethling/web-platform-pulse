@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
-import { SECTION_ORDER, sectionFor } from "../../src/core/issue.ts";
+import { SECTION_ORDER, sectionFor, type Section } from "../../src/core/issue.ts";
 import type { CandidateEvent, ChangeEventType } from "../../src/core/types.ts";
 import { connect } from "../../src/store/db.ts";
 import {
@@ -18,17 +18,25 @@ const NOW = new Date("2026-06-14T06:00:00.000Z");
 const DAY = CADENCE_PERIOD_MS["daily"]!;
 const daysAgo = (days: number): Date => new Date(NOW.getTime() - days * DAY);
 
-const EVENT_TYPES: ChangeEventType[] = [
-  "baseline-change",
-  "browser-support",
-  "spec-change",
-  "vendor-position",
-  "feature-status",
-  "browser-release",
-  "runtime-release",
-  "tag-review",
-  "editorial",
-];
+/**
+ * The section each event type gets below the lead, written out in full. It is a
+ * `Record` keyed by `ChangeEventType`, so adding a type to the union fails to
+ * compile here until the type is listed, and the list the tests iterate is
+ * derived from it rather than kept by hand beside it.
+ */
+const SECTION_BELOW_LEAD: Record<ChangeEventType, Section> = {
+  "baseline-change": "shipped",
+  "browser-support": "shipped",
+  "browser-release": "shipped",
+  "runtime-release": "shipped",
+  "spec-change": "watch",
+  "vendor-position": "watch",
+  "feature-status": "watch",
+  "tag-review": "watch",
+  editorial: "voices",
+};
+
+const EVENT_TYPES = Object.keys(SECTION_BELOW_LEAD) as ChangeEventType[];
 
 const candidate = (key: string, overrides: Partial<CandidateEvent> = {}): CandidateEvent => ({
   type: "baseline-change",
@@ -164,8 +172,28 @@ describe("include and exclude", () => {
     for (const type of EVENT_TYPES) {
       const eventId = await seedEvent(type, daysAgo(1), { type });
       await includeEvent(sql, issueId, eventId);
-      expect((await itemFor(issueId, eventId))?.section, type).toBe(sectionFor({ type }, false));
+      const section = (await itemFor(issueId, eventId))?.section;
+      expect(section, type).toBe(SECTION_BELOW_LEAD[type]);
+      expect(section, type).toBe(sectionFor({ type }, false));
     }
+  });
+
+  it("raises for a type it has no section for, naming it, rather than filing it under watch", async () => {
+    const issueId = await openEmptyDraft();
+    // Inserted directly: ingest cannot score a type the TypeScript does not know.
+    const [event] = await sql<{ id: string }[]>`
+      insert into change_event
+        (type, subject, title, before, after, first_observed_at, significance, dedupe_key, correlation_key)
+      values ('a-type-added-later', '{}'::jsonb, 'future', null, '{}'::jsonb, ${daysAgo(1)}, 1,
+              'test:future', 'test:future')
+      returning id
+    `;
+    const eventId = event!.id;
+
+    await expect(includeEvent(sql, issueId, eventId)).rejects.toThrow(
+      /change event type "a-type-added-later" has no section/,
+    );
+    expect(await itemFor(issueId, eventId)).toBeUndefined();
   });
 });
 
@@ -183,6 +211,45 @@ describe("annotateItem", () => {
 
     await annotateItem(sql, issueId, eventId, "   \n ", "watch");
     expect((await itemFor(issueId, eventId))?.note).toBeNull();
+  });
+
+  it("leaves the note alone when the section changes alone, and the section alone when the note does", async () => {
+    const eventId = await seedEvent("a", daysAgo(1));
+    const issueId = await openEmptyDraft();
+    await includeEvent(sql, issueId, eventId);
+    await annotateItem(sql, issueId, eventId, "Why this matters", "lead");
+
+    // A page that is out of date sends only what the operator touched.
+    await annotateItem(sql, issueId, eventId, null, "voices");
+    expect(await itemFor(issueId, eventId)).toMatchObject({
+      note: "Why this matters",
+      section: "voices",
+    });
+
+    await annotateItem(sql, issueId, eventId, "A better sentence", null);
+    expect(await itemFor(issueId, eventId)).toMatchObject({
+      note: "A better sentence",
+      section: "voices",
+    });
+
+    await annotateItem(sql, issueId, eventId, null, null);
+    expect(await itemFor(issueId, eventId)).toMatchObject({
+      note: "A better sentence",
+      section: "voices",
+    });
+  });
+
+  it("clears a note only when it is given an empty string, not when it is given nothing", async () => {
+    const eventId = await seedEvent("a", daysAgo(1));
+    const issueId = await openEmptyDraft();
+    await includeEvent(sql, issueId, eventId);
+    await annotateItem(sql, issueId, eventId, "Keep me", "watch");
+
+    await annotateItem(sql, issueId, eventId, null, "lead");
+    expect((await itemFor(issueId, eventId))?.note).toBe("Keep me");
+
+    await annotateItem(sql, issueId, eventId, "", null);
+    expect(await itemFor(issueId, eventId)).toMatchObject({ note: null, section: "lead" });
   });
 
   it("accepts every section in SECTION_ORDER and rejects an unknown one", async () => {
@@ -235,6 +302,40 @@ describe("setHeading", () => {
       title: "Container queries land",
       intro: "Intro.\n\nSecond paragraph.",
     });
+  });
+
+  it("leaves the intro alone when the title changes alone, and the title alone when the intro does", async () => {
+    const issueId = await openEmptyDraft();
+    await setHeading(sql, issueId, "First title", "First intro");
+
+    await setHeading(sql, issueId, "Second title", null);
+    expect(await getDraftIssue(sql)).toMatchObject({
+      title: "Second title",
+      intro: "First intro",
+    });
+
+    await setHeading(sql, issueId, null, "Second intro");
+    expect(await getDraftIssue(sql)).toMatchObject({
+      title: "Second title",
+      intro: "Second intro",
+    });
+
+    await setHeading(sql, issueId, null, null);
+    expect(await getDraftIssue(sql)).toMatchObject({
+      title: "Second title",
+      intro: "Second intro",
+    });
+  });
+
+  it("clears the title or the intro only when given an empty string", async () => {
+    const issueId = await openEmptyDraft();
+    await setHeading(sql, issueId, "Title", "Intro");
+
+    await setHeading(sql, issueId, "", null);
+    expect(await getDraftIssue(sql)).toMatchObject({ title: "", intro: "Intro" });
+
+    await setHeading(sql, issueId, null, "  ");
+    expect(await getDraftIssue(sql)).toMatchObject({ title: "", intro: "" });
   });
 
   it("enforces the caps of 200 and 4000 characters", async () => {

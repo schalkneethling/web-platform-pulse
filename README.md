@@ -79,21 +79,21 @@ but without those two the page can only render its error state.
 The pipeline CLI (`vp run pulse`) pulls live data when run without flags.
 Useful flags and environment variables:
 
-| Flag / env                           | Purpose                                                     |
-| ------------------------------------ | ----------------------------------------------------------- |
-| `--data <path>`                      | Web-features fixture instead of the live artifact           |
-| `--releases <path>`                  | Browser-release fixture instead of the live feeds           |
-| `--runtimes <path>`                  | Runtime-release fixture instead of the live feeds           |
-| `--positions <path>`                 | Standards-positions fixture instead of the live feeds       |
-| `--chrome <path>`                    | Chrome Platform Status fixture instead of the live feed     |
-| `--specs <path>`                     | W3C spec-transition fixture instead of the live feeds       |
-| `--tag-reviews <path>`               | TAG design-review fixture instead of the live issues API    |
-| `--voices <path>`                    | Voices fixture instead of the live blog feeds               |
-| `--email` / `PULSE_SUBSCRIBER_EMAIL` | The operator's address; changing it re-points the reader    |
-| `--smtp` / `PULSE_SMTP_URL`          | SMTP transport; omit it and email is skipped                |
-| `PULSE_EMAIL_FROM`                   | Sender address                                              |
-| `PULSE_PUBLIC_URL`                   | The reader's origin; confirm and unsubscribe links use it   |
-| `DATABASE_URL`                       | Postgres connection (defaults to the local Docker instance) |
+| Flag / env                           | Purpose                                                                                 |
+| ------------------------------------ | --------------------------------------------------------------------------------------- |
+| `--data <path>`                      | Web-features fixture instead of the live artifact                                       |
+| `--releases <path>`                  | Browser-release fixture instead of the live feeds                                       |
+| `--runtimes <path>`                  | Runtime-release fixture instead of the live feeds                                       |
+| `--positions <path>`                 | Standards-positions fixture instead of the live feeds                                   |
+| `--chrome <path>`                    | Chrome Platform Status fixture instead of the live feed                                 |
+| `--specs <path>`                     | W3C spec-transition fixture instead of the live feeds                                   |
+| `--tag-reviews <path>`               | TAG design-review fixture instead of the live issues API                                |
+| `--voices <path>`                    | Voices fixture instead of the live blog feeds                                           |
+| `--email` / `PULSE_SUBSCRIBER_EMAIL` | The operator's address; changing it re-points the reader and clears the `operator link` |
+| `--smtp` / `PULSE_SMTP_URL`          | SMTP transport; omit it and email is skipped                                            |
+| `PULSE_EMAIL_FROM`                   | Sender address                                                                          |
+| `PULSE_PUBLIC_URL`                   | The reader's origin; confirm and unsubscribe links use it                               |
+| `DATABASE_URL`                       | Postgres connection (defaults to the local Docker instance)                             |
 
 Every variable in the table is an item in `.env.schema`; setting it in the
 shell overrides what Varlock resolves.
@@ -106,7 +106,9 @@ emails and exits. A plain `vp run pulse` sends them too, after the pipeline.
 There are two kinds of subscriber. The **operator** is the address in
 `PULSE_SUBSCRIBER_EMAIL`: the pipeline creates it, confirms it without an
 email round trip, and marks it with `subscriber.is_operator`. Its digest is
-unfiltered, and it is the one the public reader shows.
+unfiltered, and it is the one the public reader shows. Signing in to curate is
+a separate step: `vp run pulse operator link <auth-user-id>` records which
+Supabase Auth user is the operator (see "Curating at `/curate`").
 
 Everyone else signs up through the form in the reader and goes through double
 opt-in:
@@ -147,36 +149,73 @@ issue open     Sunday 06:00 UTC (issue.yml) or by hand: a draft, pre-filled with
 issue preview  the draft mailed to the operator, subject marked [Preview]
      │
 issue publish  status becomes published, every confirmed subscriber is mailed once
+     │
+issue retry    any send that failed is sent again, for every published issue
 ```
 
-The three commands are `vp run pulse issue open`, `issue preview` and
-`issue publish`. `open` needs only the database; if a draft already exists it
-changes nothing. `preview` needs `PULSE_SMTP_URL`, `PULSE_PUBLIC_URL` and the
-operator's address (`PULSE_SUBSCRIBER_EMAIL` or `--email`), and writes nothing.
-`publish` needs the first two, refuses a draft with no included item and no
-intro, and is safe to run again: it sends nothing twice and retries only the
-sends that failed. A run that has a failed send exits 1.
+The four commands are `vp run pulse issue open`, `issue preview`,
+`issue publish` and `issue retry`. `open` needs only the database; if a draft
+already exists it changes nothing. `preview` needs `PULSE_SMTP_URL`,
+`PULSE_PUBLIC_URL` and the operator's address (`PULSE_SUBSCRIBER_EMAIL` or
+`--email`), and writes nothing.
+
+`publish` needs the first two settings and a draft. It refuses, and leaves the
+draft a draft, unless the draft has a title and at least one included item or an
+intro. `issue open` pre-fills a draft with a blank title, so a draft nobody has
+edited can never be published by mistake. With no draft it exits 1 and points at
+`issue retry`. After publishing it sends every email still owed for every
+published issue, oldest issue first.
+
+`retry` needs the same settings and publishes nothing, so it is safe to run
+while next week's draft is open. It sends the emails that failed, for the newest
+issue or an older one. Neither command sends anything twice: a subscriber with a
+`sent` row is never selected again, and a subscriber is retried until five sends
+have failed. A run that has a failed send exits 1, and so does a run that finds
+a subscriber who has used all five attempts: it names the issue, how many
+subscribers and their ids, because nothing will retry them and a clean exit
+would hide that.
+
+Only one `publish` or `retry` runs at a time. Each takes a Postgres advisory
+lock for the whole run, and a run that cannot get it prints that another is
+already running, sends nothing and exits 1. The lock lives as long as one
+database connection, so `DATABASE_URL` must be a direct connection or Supabase's
+Session pooler, not the Transaction pooler.
 
 `.github/workflows/issue.yml` runs `open` every Sunday at 06:00 UTC, which sends
-no mail, and lets you run `open`, `preview` or `publish` from the Actions tab.
-Publishing is never scheduled, because the issue is worth what the operator
-writes on each item.
+no mail, and lets you run `open`, `preview`, `publish` or `retry` from the
+Actions tab. Publishing is never scheduled, because the issue is worth what the
+operator writes on each item.
 
 ### Curating at `/curate`
 
 Open `/curate` on the reader and press "Sign in with Google". The reader asks
-the database whether that account is the operator: the Google address must
-match the subscriber marked `is_operator` (the address in
-`PULSE_SUBSCRIBER_EMAIL`), and Supabase must report `google` as the sign-in
-provider. Any other account sees "This account is not the operator" and can
-read and write nothing, whatever the browser does, because the check lives in
-migration 10 and not in the page.
+the database whether that account is the operator. The database answers by the
+account's Supabase Auth user id, the `sub` claim of its token, and by nothing
+else in the token: `subscriber.auth_user_id` holds the operator's id, and
+`is_operator_request()` (migration 10) is true only for a token whose `sub`
+equals it. The email address and the list of linked providers are not read,
+because the owner of an account can change its address and the list names every
+provider linked to the account, not the one used to sign in. Any other account
+sees "This account is not the operator" and can read and write nothing,
+whatever the browser does, because the check lives in the database and not in
+the page.
 
-The page lists the draft's window, included events first. Each event has an
-Include checkbox and, once included, a section and a note. Changes save as you
-make them: the checkbox and the section on change, the note, title and intro
-when the field loses focus and its text has changed. Each item says "Saved." or
-why it was not saved, and keeps what you typed when a save fails. The page
+That page also shows the signed-in account's user id, and nothing else about
+the account, so the operator can link it (see the one-time setup below). Until
+`operator link` has run, nobody is the operator in the browser. If the operator
+address changes, the pipeline moves the operator flag and the link is cleared
+with it, so the new operator is unlinked until `operator link` runs again.
+
+The page lists the draft's window, included events first, with its dates in
+UTC, the way the digest email writes them. Each event has an Include checkbox
+and, once included, a section and a note. Changes save as you make them: the
+checkbox and the section on change, the note, title and intro when the field
+loses focus and its text has changed. Each save sends only the field that
+changed, so a page left open in another tab cannot overwrite the field next to
+it with a stale value. Each item says "Saved." or why it was not saved: a failed
+note or heading keeps what you typed, and a failed include or exclude puts the
+checkbox back and says so. While any field has text that is not saved, or a
+save in flight, the browser asks before you close or leave the page. The page
 shows the first 50 events that are not in the issue and a "Show 50 more"
 button for the rest.
 
@@ -199,11 +238,18 @@ sign in by storing a session minted with the local secret.
    URLs. Without this, Supabase sends the operator back to the Site URL.
 3. Apply migrations 9 and 10 in the SQL editor, in order, before merging the
    code that uses them, as with every migration.
-4. Turn off email-and-password sign-ups under Authentication. Only a Google
-   sign-in can curate, because the database requires `google` among the
-   token's providers, so a password account adds nothing but an account to
-   look after, and an account registered with the operator's address is one
-   Supabase could later link to the operator's Google identity.
+4. Run the pipeline once so the operator exists (`vp run pulse`, with
+   `PULSE_SUBSCRIBER_EMAIL` set to the operator's address).
+5. Sign in once at `/curate` with the operator's Google account. The page says
+   the account is not the operator yet and shows its user id.
+6. Copy that id and run
+   `vp run pulse operator link <auth-user-id>`. Reload `/curate`: the draft is
+   there. `vp run pulse operator unlink` undoes it.
+7. Turn off email-and-password sign-ups under Authentication. This is defence in
+   depth and not what the check relies on, which is the auth user id: with
+   password sign-ups off, there is no second account to look after, and no
+   account registered with the operator's address that Supabase could later link
+   to the operator's Google identity.
 
 ## Testing
 

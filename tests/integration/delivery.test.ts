@@ -3,7 +3,7 @@
 // local Mailpit catcher; a repeated run sends nothing new, and a failed
 // delivery is re-sent by the next run.
 import { readFileSync } from "node:fs";
-import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { MAILPIT_API_URL, MAILPIT_SMTP_URL } from "../../scripts/dev-mail.ts";
 import { createWebFeaturesAdapter } from "../../src/adapters/web-features.ts";
 import { runPipeline } from "../../src/cli/pipeline.ts";
@@ -131,6 +131,35 @@ describe("email delivery", () => {
 
     expect(second.deliveries).toEqual({ sent: 0, failed: 0 });
     expect((await inbox()).total).toBe(0);
+  });
+
+  it("logs a failed delivery by code, never the address or the server's reply", async () => {
+    await run("old.json", [brokenChannel]);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    let output = "";
+    const rejecting = createEmailChannel({
+      from: FROM,
+      publicUrl: PUBLIC_URL,
+      send: async () => {
+        throw Object.assign(
+          new Error("all recipients were rejected: 550 5.1.1 <operator@example.com>: no such user"),
+          { code: "EENVELOPE", responseCode: 550 },
+        );
+      },
+    });
+
+    try {
+      expect((await run("new.json", [rejecting])).deliveries).toEqual({ sent: 0, failed: 1 });
+      output = logged.mock.calls.flat().join("\n");
+    } finally {
+      logged.mockRestore();
+    }
+
+    expect(output).toMatch(
+      /delivery of digest \S+ via email failed: code EENVELOPE, response code 550/,
+    );
+    expect(output).not.toContain("operator@example.com");
+    expect(output).not.toContain("no such user");
   });
 
   it("a failed delivery is re-sent by the next run", SLOW_SMTP, async () => {

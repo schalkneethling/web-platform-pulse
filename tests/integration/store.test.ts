@@ -353,11 +353,19 @@ describe("delivery records (§10)", () => {
   it("stops offering a digest after five failed attempts on that channel", async () => {
     const digestId = await assembleOne();
     for (let attempt = 1; attempt <= 4; attempt += 1) {
-      await recordDelivery(sql, digestId, "email", { status: "failed", error: "ECONNREFUSED" });
+      await recordDelivery(sql, digestId, "email", {
+        status: "failed",
+        error: "ECONNREFUSED",
+        diagnostic: "code ECONNREFUSED",
+      });
     }
     expect(await digestsAwaitingDelivery(sql, "email")).toHaveLength(1);
 
-    await recordDelivery(sql, digestId, "email", { status: "failed", error: "ECONNREFUSED" });
+    await recordDelivery(sql, digestId, "email", {
+      status: "failed",
+      error: "ECONNREFUSED",
+      diagnostic: "code ECONNREFUSED",
+    });
 
     expect(await digestsAwaitingDelivery(sql, "email")).toEqual([]);
     // The limit is per channel: another channel has not failed yet.
@@ -366,7 +374,11 @@ describe("delivery records (§10)", () => {
 
   it("a failed attempt keeps the digest awaiting, with the error on record", async () => {
     const digestId = await assembleOne();
-    await recordDelivery(sql, digestId, "email", { status: "failed", error: "ECONNREFUSED" });
+    await recordDelivery(sql, digestId, "email", {
+      status: "failed",
+      error: "ECONNREFUSED",
+      diagnostic: "code ECONNREFUSED",
+    });
     expect(await digestsAwaitingDelivery(sql, "email")).toEqual([
       { digestId, email: "operator@example.com", unsubscribeToken: expect.any(String) },
     ]);

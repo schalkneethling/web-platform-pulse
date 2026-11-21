@@ -1,9 +1,9 @@
 // Slice G.4 outer test: `issue publish` flips the draft, sends the issue once to
 // every confirmed subscriber, and only ever retries what failed. Real Postgres
 // and the local mail catcher.
-import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { MAILPIT_API_URL, MAILPIT_SMTP_URL } from "../../scripts/dev-mail.ts";
-import { runIssuePublish } from "../../src/cli/issue.ts";
+import { runIssuePublish, runIssueRetry } from "../../src/cli/issue.ts";
 import type { CandidateEvent } from "../../src/core/types.ts";
 import type { SendEmail } from "../../src/delivery/email.ts";
 import { createSmtpSender } from "../../src/delivery/smtp.ts";
@@ -13,7 +13,9 @@ import {
   getDraftIssue,
   includeEvent,
   openIssue,
+  publishDraft,
   setHeading,
+  withIssueSendLock,
 } from "../../src/store/issue.ts";
 import {
   confirmSubscription,
@@ -39,6 +41,26 @@ const publish = async (send?: SendEmail) => {
   const lines: string[] = [];
   const ok = await runIssuePublish(sql, deps(send), (line) => lines.push(line));
   return { ok, lines };
+};
+
+const retry = async (send?: SendEmail) => {
+  const lines: string[] = [];
+  const ok = await runIssueRetry(sql, deps(send), (line) => lines.push(line));
+  return { ok, lines };
+};
+
+/** A sender that records what it was asked to send and never touches the network. */
+const recorder = (failFor: string[] = []) => {
+  const sent: { to: string; subject: string }[] = [];
+  const send: SendEmail = async (message) => {
+    if (failFor.includes(message.to)) throw new Error("421 try again later");
+    sent.push({ to: message.to, subject: message.subject });
+  };
+  return { sent, send };
+};
+
+const mustNotSend: SendEmail = async () => {
+  throw new Error("must not send");
 };
 
 /** Fails for the named addresses with an error that echoes a credentialed URL. */
@@ -117,12 +139,15 @@ const deliveries = async (email: string) =>
     where s.email = ${email} order by d.attempted_at, d.id
   `;
 
-/** A draft carrying one annotated event, ready to publish. */
+const TITLE = "Anchors land";
+
+/** A draft carrying one annotated event and a title, ready to publish. */
 const openAnnotatedDraft = async () => {
   await ingestCandidates(sql, [candidate("lh")]);
   await openIssue(sql);
   const draft = (await getDraftIssue(sql))!;
   await annotateItem(sql, draft.id, draft.items[0]!.event.id, "Worth reading.", "lead");
+  await setHeading(sql, draft.id, TITLE, "");
   return draft;
 };
 
@@ -167,7 +192,7 @@ describe("issue publish", () => {
       expect(issue!.published_at).toBeInstanceOf(Date);
       expect(await recipients()).toEqual(["alice@example.com", "bob@example.com"]);
       expect((await bodyOf("alice@example.com")).text).toContain("lh reached Baseline");
-      expect((await inbox())[0]!.Subject).toBe("Platform Pulse #1");
+      expect((await inbox())[0]!.Subject).toBe(`Platform Pulse #1: ${TITLE}`);
     },
   );
 
@@ -196,6 +221,8 @@ describe("issue publish", () => {
     await signUp("alice@example.com");
     await ingestCandidates(sql, [candidate("lh")]);
     await openIssue(sql);
+    const draft = (await getDraftIssue(sql))!;
+    await setHeading(sql, draft.id, TITLE, "");
 
     const { ok, lines } = await publish();
 
@@ -204,7 +231,7 @@ describe("issue publish", () => {
       true,
     );
     const [message] = await inbox();
-    expect(message!.Subject).toBe("Platform Pulse #1");
+    expect(message!.Subject).toBe(`Platform Pulse #1: ${TITLE}`);
     const { id } = await bodyOf("alice@example.com");
     const html = (
       (await (await fetch(`${MAILPIT_API_URL}/api/v1/message/${id}`)).json()) as { HTML: string }
@@ -212,123 +239,7 @@ describe("issue publish", () => {
     expect(html).not.toContain("issue-preview-banner");
   });
 
-  it(
-    "does not mail someone who confirms after publication, even on a later run",
-    SLOW_SMTP,
-    async () => {
-      await signUp("early@example.com");
-      await openAnnotatedDraft();
-      await publish();
-      await fetch(`${MAILPIT_API_URL}/api/v1/messages`, { method: "DELETE" });
-
-      await signUp("late@example.com");
-      const { ok, lines } = await publish();
-
-      expect(ok).toBe(true);
-      expect(lines.join("\n")).toMatch(/already published and nothing is waiting/);
-      expect(await inbox()).toHaveLength(0);
-      expect(await deliveries("late@example.com")).toEqual([]);
-    },
-  );
-
-  it("a second publish sends nothing and changes nothing", SLOW_SMTP, async () => {
-    await signUp("alice@example.com");
-    await openAnnotatedDraft();
-    await publish();
-    const before = await sql`select id, status, published_at from issue`;
-    const deliveriesBefore = await sql`select id from issue_delivery order by id`;
-
-    const { ok, lines } = await publish();
-
-    expect(ok).toBe(true);
-    expect(lines.join("\n")).toMatch(/nothing is waiting/);
-    expect(await sql`select id, status, published_at from issue`).toEqual(before);
-    expect(await sql`select id from issue_delivery order by id`).toEqual(deliveriesBefore);
-    expect(await inbox()).toHaveLength(1);
-  });
-
-  it("says so, and exits clean, when no issue exists at all", async () => {
-    const { ok, lines } = await publish(async () => {
-      throw new Error("must not send");
-    });
-    expect(ok).toBe(true);
-    expect(lines.join("\n")).toMatch(/nothing to retry/);
-  });
-
-  it(
-    "records a failure with the credential scrubbed, exits non-zero and retries only that subscriber",
-    SLOW_SMTP,
-    async () => {
-      await signUp("alice@example.com");
-      await signUp("bob@example.com");
-      await openAnnotatedDraft();
-
-      const first = await publish(failingFor("bob@example.com"));
-
-      expect(first.ok).toBe(false);
-      expect(first.lines).toContain("issue #1: 1 sent, 1 failed");
-      expect(await recipients()).toEqual(["alice@example.com"]);
-      const [failure] = await deliveries("bob@example.com");
-      expect(failure!.status).toBe("failed");
-      expect(failure!.error).toContain("smtp://***@smtp.example.com");
-      expect(failure!.error).not.toContain("hunter2");
-
-      const second = await publish();
-
-      expect(second.ok).toBe(true);
-      expect(second.lines).toContain("issue #1: 1 sent, 0 failed");
-      expect(await recipients()).toEqual(["alice@example.com", "bob@example.com"]);
-      expect((await deliveries("bob@example.com")).map((row) => row.status)).toEqual([
-        "failed",
-        "sent",
-      ]);
-      expect((await deliveries("alice@example.com")).map((row) => row.status)).toEqual(["sent"]);
-    },
-  );
-
-  it("stops retrying a subscriber after MAX_FAILED_DELIVERIES failures", async () => {
-    await signUp("bob@example.com");
-    await openAnnotatedDraft();
-
-    for (let attempt = 0; attempt < MAX_FAILED_DELIVERIES; attempt += 1) {
-      expect((await publish(failingFor("bob@example.com"))).ok).toBe(false);
-    }
-    const last = await publish(async () => {
-      throw new Error("must not send");
-    });
-
-    expect(last.ok).toBe(true);
-    expect(await deliveries("bob@example.com")).toHaveLength(MAX_FAILED_DELIVERIES);
-  });
-
-  it("refuses a draft with no items and no intro, and leaves it a draft", async () => {
-    await signUp("alice@example.com");
-    await openIssue(sql);
-
-    const { ok, lines } = await publish(async () => {
-      throw new Error("must not send");
-    });
-
-    expect(ok).toBe(false);
-    expect(lines.join("\n")).toMatch(/was not published/);
-    const [issue] = await sql`select status, published_at from issue`;
-    expect(issue).toMatchObject({ status: "draft", published_at: null });
-    expect(await sql`select id from issue_delivery`).toHaveLength(0);
-  });
-
-  it("refuses a draft whose items were all excluded and whose intro is blank", async () => {
-    await ingestCandidates(sql, [candidate("lh")]);
-    await openIssue(sql);
-    const draft = (await getDraftIssue(sql))!;
-    await sql`select public.issue_exclude_event(${draft.id}::uuid, ${draft.items[0]!.event.id}::uuid)`;
-    await setHeading(sql, draft.id, "", "   ");
-
-    expect((await publish()).ok).toBe(false);
-    const [issue] = await sql`select status from issue`;
-    expect(issue!.status).toBe("draft");
-  });
-
-  it("publishes a draft that has an intro and no items", SLOW_SMTP, async () => {
+  it("publishes a draft that has a title and an intro but no items", SLOW_SMTP, async () => {
     await signUp("alice@example.com");
     await openIssue(sql);
     const draft = (await getDraftIssue(sql))!;
@@ -340,6 +251,89 @@ describe("issue publish", () => {
     const [message] = await inbox();
     expect(message!.Subject).toBe("Platform Pulse #1: A quiet week");
     expect((await bodyOf("alice@example.com")).text).toContain("Nothing shipped, but here is why.");
+  });
+
+  it("refuses when there is no draft, says which command retries, and sends nothing", async () => {
+    await signUp("alice@example.com");
+
+    const { ok, lines } = await publish(mustNotSend);
+
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/no draft issue to publish/);
+    expect(lines.join("\n")).toContain("`issue retry`");
+  });
+
+  it("refuses to publish when the only draft is already published, rather than resending", async () => {
+    await signUp("alice@example.com");
+    await openAnnotatedDraft();
+    const first = recorder();
+    expect((await publish(first.send)).ok).toBe(true);
+
+    const again = recorder();
+    const { ok, lines } = await publish(again.send);
+
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/no draft issue to publish/);
+    expect(again.sent).toEqual([]);
+  });
+
+  it("refuses a draft with a title but no items and no intro, and leaves it a draft", async () => {
+    await signUp("alice@example.com");
+    await openIssue(sql);
+    const draft = (await getDraftIssue(sql))!;
+    await setHeading(sql, draft.id, TITLE, "");
+
+    const { ok, lines } = await publish(mustNotSend);
+
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(
+      /was not published: it needs at least one included item or an intro/,
+    );
+    const [issue] = await sql`select status, published_at from issue`;
+    expect(issue).toMatchObject({ status: "draft", published_at: null });
+    expect(await sql`select id from issue_delivery`).toHaveLength(0);
+  });
+
+  it("refuses a draft whose items were all excluded and whose intro is blank", async () => {
+    await ingestCandidates(sql, [candidate("lh")]);
+    await openIssue(sql);
+    const draft = (await getDraftIssue(sql))!;
+    await sql`select public.issue_exclude_event(${draft.id}::uuid, ${draft.items[0]!.event.id}::uuid)`;
+    await setHeading(sql, draft.id, TITLE, "   ");
+
+    expect((await publish(mustNotSend)).ok).toBe(false);
+    const [issue] = await sql`select status from issue`;
+    expect(issue!.status).toBe("draft");
+  });
+
+  it("refuses a draft with annotated items but a blank title, and leaves it a draft", async () => {
+    await signUp("alice@example.com");
+    await ingestCandidates(sql, [candidate("lh")]);
+    await openIssue(sql);
+    const draft = (await getDraftIssue(sql))!;
+    await annotateItem(sql, draft.id, draft.items[0]!.event.id, "Worth reading.", "lead");
+    await setHeading(sql, draft.id, "   ", "A real intro.");
+
+    const { ok, lines } = await publish(mustNotSend);
+
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/was not published: it needs a title\./);
+    expect(await sql`select status, published_at from issue`).toMatchObject([
+      { status: "draft", published_at: null },
+    ]);
+    expect(await sql`select id from issue_delivery`).toHaveLength(0);
+  });
+
+  it("enforces the title rule in the update itself, not only in the command", async () => {
+    await ingestCandidates(sql, [candidate("lh")]);
+    await openIssue(sql);
+
+    expect(await publishDraft(sql)).toEqual({
+      outcome: "refused",
+      number: 1,
+      missing: ["title"],
+    });
+    expect(await sql`select status from issue`).toMatchObject([{ status: "draft" }]);
   });
 
   it("locks the issue against curation once published", SLOW_SMTP, async () => {
@@ -363,5 +357,376 @@ describe("issue publish", () => {
     expect(second!.number).toBe(2);
     expect(second!.window_start).toEqual(first!.window_end);
     expect(first!.window_end.toISOString()).toBe(draft.windowEnd);
+  });
+});
+
+describe("issue retry", () => {
+  it("sends nothing and changes nothing when everyone has the issue", SLOW_SMTP, async () => {
+    await signUp("alice@example.com");
+    await openAnnotatedDraft();
+    await publish();
+    const before = await sql`select id, status, published_at from issue`;
+    const deliveriesBefore = await sql`select id from issue_delivery order by id`;
+
+    const { ok, lines } = await retry();
+
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/nothing is waiting/);
+    expect(await sql`select id, status, published_at from issue`).toEqual(before);
+    expect(await sql`select id from issue_delivery order by id`).toEqual(deliveriesBefore);
+    expect(await inbox()).toHaveLength(1);
+  });
+
+  it("says so, and exits clean, when no issue has been published", async () => {
+    await openIssue(sql);
+
+    const { ok, lines } = await retry(mustNotSend);
+
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/no published issue/);
+    expect(await sql`select status from issue`).toMatchObject([{ status: "draft" }]);
+  });
+
+  it(
+    "does not mail someone who confirms after publication, even on a later retry",
+    SLOW_SMTP,
+    async () => {
+      await signUp("early@example.com");
+      await openAnnotatedDraft();
+      await publish();
+      await fetch(`${MAILPIT_API_URL}/api/v1/messages`, { method: "DELETE" });
+
+      await signUp("late@example.com");
+      const { ok, lines } = await retry();
+
+      expect(ok).toBe(true);
+      expect(lines.join("\n")).toMatch(/nothing is waiting/);
+      expect(await inbox()).toHaveLength(0);
+      expect(await deliveries("late@example.com")).toEqual([]);
+    },
+  );
+
+  it(
+    "records a failure with the credential scrubbed, exits non-zero and retries only that subscriber",
+    SLOW_SMTP,
+    async () => {
+      await signUp("alice@example.com");
+      await signUp("bob@example.com");
+      await openAnnotatedDraft();
+
+      const first = await publish(failingFor("bob@example.com"));
+
+      expect(first.ok).toBe(false);
+      expect(first.lines).toContain("issue #1: 1 sent, 1 failed");
+      expect(await recipients()).toEqual(["alice@example.com"]);
+      const [failure] = await deliveries("bob@example.com");
+      expect(failure!.status).toBe("failed");
+      expect(failure!.error).toContain("smtp://***@smtp.example.com");
+      expect(failure!.error).not.toContain("hunter2");
+
+      const second = await retry();
+
+      expect(second.ok).toBe(true);
+      expect(second.lines).toContain("issue #1: 1 sent, 0 failed");
+      expect(await recipients()).toEqual(["alice@example.com", "bob@example.com"]);
+      expect((await deliveries("bob@example.com")).map((row) => row.status)).toEqual([
+        "failed",
+        "sent",
+      ]);
+      expect((await deliveries("alice@example.com")).map((row) => row.status)).toEqual(["sent"]);
+    },
+  );
+
+  it("logs a failed send by code and subscriber id, never the address or the server's reply", async () => {
+    const bobId = await signUp("bob@example.com");
+    await openAnnotatedDraft();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    let output = "";
+    const rejection = Object.assign(
+      new Error("all recipients were rejected: 550 5.1.1 <bob@example.com>: no such user"),
+      { code: "EENVELOPE", responseCode: 550 },
+    );
+
+    try {
+      expect(
+        (
+          await publish(async () => {
+            throw rejection;
+          })
+        ).ok,
+      ).toBe(false);
+      output = logged.mock.calls.flat().join("\n");
+    } finally {
+      logged.mockRestore();
+    }
+
+    expect(output).toContain(
+      `issue #1 to subscriber ${bobId} failed: code EENVELOPE, response code 550`,
+    );
+    expect(output).not.toContain("bob@example.com");
+    expect(output).not.toContain("no such user");
+    // The database keeps the full message for the operator who goes looking.
+    expect((await deliveries("bob@example.com"))[0]!.error).toContain("no such user");
+  });
+
+  it("stops retrying a subscriber after MAX_FAILED_DELIVERIES failures", async () => {
+    await signUp("bob@example.com");
+    await openAnnotatedDraft();
+
+    expect((await publish(failingFor("bob@example.com"))).ok).toBe(false);
+    for (let attempt = 1; attempt < MAX_FAILED_DELIVERIES; attempt += 1) {
+      expect((await retry(failingFor("bob@example.com"))).ok).toBe(false);
+    }
+    await retry(mustNotSend);
+
+    expect(await deliveries("bob@example.com")).toHaveLength(MAX_FAILED_DELIVERIES);
+  });
+
+  it("reports a subscriber who ran out of retries, per issue, and exits non-zero", async () => {
+    await signUp("alice@example.com");
+    const bobId = await signUp("bob@example.com");
+    await openAnnotatedDraft();
+    expect((await publish(failingFor("bob@example.com"))).ok).toBe(false);
+    for (let attempt = 1; attempt < MAX_FAILED_DELIVERIES; attempt += 1) {
+      await retry(failingFor("bob@example.com"));
+    }
+
+    const { ok, lines } = await retry(mustNotSend);
+
+    expect(ok).toBe(false);
+    const report = lines.join("\n");
+    expect(report).toContain(
+      `issue #1: 1 subscriber has used all ${MAX_FAILED_DELIVERIES} attempts and will not be retried (${bobId})`,
+    );
+    expect(report).not.toMatch(/nothing is waiting/);
+    expect(report).not.toContain("bob@example.com");
+    // Publishing is held to the same standard as retrying.
+    await ingestCandidates(sql, [candidate("next")]);
+    await openIssue(sql, new Date(Date.now() + 60_000));
+    const next = (await getDraftIssue(sql))!;
+    await setHeading(sql, next.id, "Week two", "Intro.");
+    const published = await publish(recorder().send);
+    expect(published.ok).toBe(false);
+    expect(published.lines.join("\n")).toContain("issue #1: 1 subscriber has used all");
+    expect(published.lines).toContain("issue #2: 2 sent, 0 failed");
+  });
+
+  it("does not count an unsubscribed subscriber as out of retries", async () => {
+    await signUp("alice@example.com");
+    const bobId = await signUp("bob@example.com");
+    await openAnnotatedDraft();
+    expect((await publish(failingFor("bob@example.com"))).ok).toBe(false);
+    for (let attempt = 1; attempt < MAX_FAILED_DELIVERIES; attempt += 1) {
+      await retry(failingFor("bob@example.com"));
+    }
+    await unsubscribe(sql, await tokenOf("bob@example.com"));
+
+    const { ok, lines } = await retry(mustNotSend);
+
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).not.toContain(bobId);
+  });
+
+  // The review's scenario. The Sunday schedule opens next week's draft while an
+  // older issue still has a failed send; retrying must reach the older issue
+  // and must not publish the draft nobody has written yet.
+  it("retries an older issue's failed send while the next draft is open, and publishes nothing", async () => {
+    await signUp("alice@example.com");
+    await signUp("bob@example.com");
+    await ingestCandidates(sql, [candidate("week1")]);
+    const week1End = new Date(Date.now() + 1_000);
+    await openIssue(sql, week1End);
+    const first = (await getDraftIssue(sql))!;
+    await setHeading(sql, first.id, "Week one", "Intro.");
+    const failing = recorder(["bob@example.com"]);
+    expect((await publish(failing.send)).ok).toBe(false);
+    expect(failing.sent.map((m) => m.to)).toEqual(["alice@example.com"]);
+
+    // The schedule cuts draft 2 with an event of its own, pre-filled and untitled.
+    await ingestCandidates(sql, [candidate("week2")]);
+    await sql`
+      update change_event set first_observed_at = ${new Date(week1End.getTime() + 1_000)}
+      where dedupe_key = 'test:week2'
+    `;
+    await openIssue(sql, new Date(week1End.getTime() + 5_000));
+
+    const working = recorder();
+    const { ok, lines } = await retry(working.send);
+
+    expect(ok).toBe(true);
+    expect(working.sent).toEqual([
+      { to: "bob@example.com", subject: "Platform Pulse #1: Week one" },
+    ]);
+    expect(lines).toContain("issue #1: 1 sent, 0 failed");
+    expect(await sql`select number, status from issue order by number`).toEqual([
+      { number: 1, status: "published" },
+      { number: 2, status: "draft" },
+    ]);
+    expect(
+      await sql`select id from issue_delivery where issue_id = (select id from issue where number = 2)`,
+    ).toHaveLength(0);
+
+    // And publish on that untouched draft is refused, so the retry command is
+    // the only way a retry can be asked for.
+    const refused = await publish(mustNotSend);
+    expect(refused.ok).toBe(false);
+    expect(refused.lines.join("\n")).toMatch(/issue #2 was not published: it needs a title\./);
+    expect(await sql`select number, status from issue order by number`).toEqual([
+      { number: 1, status: "published" },
+      { number: 2, status: "draft" },
+    ]);
+  });
+
+  it("sends every older issue's owed emails oldest first, and each issue its own content", async () => {
+    await signUp("alice@example.com");
+    await signUp("bob@example.com");
+    await ingestCandidates(sql, [candidate("week1")]);
+    const week1End = new Date(Date.now() + 1_000);
+    await openIssue(sql, week1End);
+    const first = (await getDraftIssue(sql))!;
+    await setHeading(sql, first.id, "Week one", "Intro.");
+    expect((await publish(recorder(["bob@example.com"]).send)).ok).toBe(false);
+
+    await openIssue(sql, new Date(week1End.getTime() + 5_000));
+    const second = (await getDraftIssue(sql))!;
+    await setHeading(sql, second.id, "Week two", "Another intro.");
+    const failing = recorder(["alice@example.com", "bob@example.com"]);
+    expect((await publish(failing.send)).ok).toBe(false);
+    expect(failing.sent).toEqual([]);
+
+    const working = recorder();
+    expect((await retry(working.send)).ok).toBe(true);
+
+    expect(working.sent).toEqual([
+      { to: "bob@example.com", subject: "Platform Pulse #1: Week one" },
+      { to: "alice@example.com", subject: "Platform Pulse #2: Week two" },
+      { to: "bob@example.com", subject: "Platform Pulse #2: Week two" },
+    ]);
+  });
+});
+
+describe("issue publish after an older issue failed", () => {
+  it("publishes the titled draft and also retries the older issue's failed send", async () => {
+    await signUp("alice@example.com");
+    await signUp("bob@example.com");
+    await ingestCandidates(sql, [candidate("week1")]);
+    const week1End = new Date(Date.now() + 1_000);
+    await openIssue(sql, week1End);
+    const first = (await getDraftIssue(sql))!;
+    await setHeading(sql, first.id, "Week one", "Intro.");
+    expect((await publish(recorder(["bob@example.com"]).send)).ok).toBe(false);
+
+    await openIssue(sql, new Date(week1End.getTime() + 5_000));
+    const second = (await getDraftIssue(sql))!;
+    await setHeading(sql, second.id, "Week two", "Another intro.");
+
+    const working = recorder();
+    const { ok, lines } = await publish(working.send);
+
+    expect(ok).toBe(true);
+    expect(lines).toContain("issue #2 published");
+    // The older issue first, so a subscriber who missed it gets it before its successor.
+    expect(working.sent).toEqual([
+      { to: "bob@example.com", subject: "Platform Pulse #1: Week one" },
+      { to: "alice@example.com", subject: "Platform Pulse #2: Week two" },
+      { to: "bob@example.com", subject: "Platform Pulse #2: Week two" },
+    ]);
+    expect(lines).toContain("issue #1: 1 sent, 0 failed");
+    expect(lines).toContain("issue #2: 2 sent, 0 failed");
+    expect(await sql`select number, status from issue order by number`).toEqual([
+      { number: 1, status: "published" },
+      { number: 2, status: "published" },
+    ]);
+  });
+});
+
+describe("two runs at once", () => {
+  const SUBSCRIBERS = 6;
+
+  /** A sender slow enough that two unlocked runs would read the same owed list. */
+  const slowRecorder = () => {
+    const sent: string[] = [];
+    const send: SendEmail = async (message) => {
+      sent.push(message.to);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    };
+    return { sent, send };
+  };
+
+  const signUpMany = async () => {
+    for (let index = 0; index < SUBSCRIBERS; index += 1) await signUp(`s${index}@example.com`);
+  };
+
+  const exactlyOnceEach = (sent: string[]) => {
+    expect(sent.sort()).toEqual(
+      Array.from({ length: SUBSCRIBERS }, (_, index) => `s${index}@example.com`),
+    );
+  };
+
+  it("lets one publish send and tells the other it did not get the lock", async () => {
+    await signUpMany();
+    await openAnnotatedDraft();
+    const { sent, send } = slowRecorder();
+    const linesA: string[] = [];
+    const linesB: string[] = [];
+
+    const [a, b] = await Promise.all([
+      runIssuePublish(sql, deps(send), (line) => linesA.push(line)),
+      runIssuePublish(sql, deps(send), (line) => linesB.push(line)),
+    ]);
+
+    exactlyOnceEach(sent);
+    expect(a !== b).toBe(true);
+    const [winner, loser] = a ? [linesA, linesB] : [linesB, linesA];
+    expect(winner).toContain(`issue #1: ${SUBSCRIBERS} sent, 0 failed`);
+    expect(loser.join("\n")).toMatch(/another issue publish or retry is already running/i);
+    expect(
+      await sql`select count(*)::int as n from issue_delivery where status = 'sent'`,
+    ).toMatchObject([{ n: SUBSCRIBERS }]);
+  });
+
+  it("lets one retry send and tells the other it did not get the lock", async () => {
+    await signUpMany();
+    await openAnnotatedDraft();
+    expect(
+      (
+        await publish(
+          recorder(Array.from({ length: SUBSCRIBERS }, (_, i) => `s${i}@example.com`)).send,
+        )
+      ).ok,
+    ).toBe(false);
+    const { sent, send } = slowRecorder();
+    const linesA: string[] = [];
+    const linesB: string[] = [];
+
+    const [a, b] = await Promise.all([
+      runIssueRetry(sql, deps(send), (line) => linesA.push(line)),
+      runIssueRetry(sql, deps(send), (line) => linesB.push(line)),
+    ]);
+
+    exactlyOnceEach(sent);
+    expect(a !== b).toBe(true);
+    expect([...linesA, ...linesB].join("\n")).toMatch(/is already running/);
+  });
+
+  it("releases the lock when the run is over, however it ended", async () => {
+    await expect(
+      withIssueSendLock(sql, async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+
+    expect(await withIssueSendLock(sql, async () => "again")).toEqual({
+      acquired: true,
+      value: "again",
+    });
+  });
+
+  it("refuses a second holder while the first is still running", async () => {
+    const outcome = await withIssueSendLock(sql, async () =>
+      withIssueSendLock(sql, async () => "inner"),
+    );
+
+    expect(outcome).toEqual({ acquired: true, value: { acquired: false } });
   });
 });

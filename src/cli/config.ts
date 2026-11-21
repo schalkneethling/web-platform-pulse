@@ -59,3 +59,20 @@ export const requireMail = (command: string, settings: Settings): ConfigResult<M
     from: settings.from,
   };
 };
+
+/**
+ * The operator address, for a command that acts on the operator's own row.
+ * There is no default: guessing one would act on a stranger's row.
+ */
+export const requireOperatorEmail = (
+  command: string,
+  settings: Settings,
+): ConfigResult<{ ok: true; email: string }> => {
+  if (!settings.operatorEmail) {
+    return {
+      ok: false,
+      message: `${command} needs the operator address: set PULSE_SUBSCRIBER_EMAIL or pass --email.`,
+    };
+  }
+  return { ok: true, email: settings.operatorEmail };
+};

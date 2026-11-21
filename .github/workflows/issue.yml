@@ -1,7 +1,7 @@
 name: Issue
 
-# The weekly issue's three commands (`issue open`, `issue preview`, `issue
-# publish`; see src/cli/issue.ts). Which trigger runs what:
+# The weekly issue's four commands (`issue open`, `issue preview`, `issue
+# publish` and `issue retry`; see src/cli/issue.ts). Which trigger runs what:
 #
 #   Schedule (Sunday 06:00 UTC): runs `issue open` only, which cuts the draft
 #   for the week that just ended, or leaves the open draft untouched. It sends
@@ -13,9 +13,13 @@ name: Issue
 #     open     cut the draft by hand, for instance after a missed Sunday.
 #     preview  mail the open draft, marked as a preview, to the operator address
 #              (PULSE_SUBSCRIBER_EMAIL). It writes nothing, so repeat it freely.
-#     publish  publish the draft and email every confirmed subscriber. It is safe
-#              to run again: it sends nothing twice and retries only the sends
-#              that failed.
+#     publish  publish the draft and email every confirmed subscriber. It needs a
+#              draft with a title and an item or an intro, and refuses the
+#              untouched draft the Sunday run opens. It also sends any email an
+#              older issue still owes. Nothing is ever sent twice.
+#     retry    send every email a published issue still owes, oldest issue first,
+#              and publish nothing. Use it for a failed send; it is safe while
+#              next week's draft is open.
 on:
   schedule:
     - cron: "0 6 * * 0" # 06:00 UTC on Sundays
@@ -30,16 +34,38 @@ on:
           - open
           - preview
           - publish
+          - retry
 
 permissions:
   contents: read
 
-# The same group as pulse.yml and confirmations.yml. Those runs read and send
-# from the same subscriber rows, and two overlapping `issue publish` runs would
-# race on the same pending subscribers. A run that finds another in progress
-# waits for it rather than cancelling it.
+# This workflow has its own group, `issue`, and does not share `confirmations`
+# with pulse.yml and confirmations.yml. GitHub keeps at most one run waiting per
+# group and cancels the waiting run when another arrives, and confirmations.yml
+# runs every 15 minutes, so a `publish` started by hand while a confirmations
+# run was in progress could be cancelled by the next confirmations run before it
+# ever started. In its own group a waiting `issue` command can only be replaced
+# by another `issue` command. A run that finds another `issue` run in progress
+# waits for it rather than cancelling it (`cancel-in-progress: false`).
+#
+# What stops two sends colliding is not this group. `publish` and `retry` each
+# hold a Postgres advisory lock for the whole run (withIssueSendLock in
+# src/store/issue.ts), so a run started from a laptop and a run started here
+# cannot both send: the second prints that another is running and exits 1.
+#
+# Nothing needs to keep these commands apart from the daily pipeline or the
+# confirmations run, because they write different tables. `issue open`,
+# `publish` and `retry` write `issue`, `issue_item` and `issue_delivery`, which
+# the pipeline and confirmations never touch; the pipeline and confirmations
+# write `change_event`, `digest`, `delivery` and the subscriber rows, which the
+# issue commands only read. The one overlap is `issue open` reading
+# `change_event` while the pipeline ingests. An event committed just after that
+# read is not pre-filled, but it is not lost: it is first observed inside the
+# draft's window, and /curate lists every event in the window, so the operator
+# can include it. The schedules are an hour apart on Sundays (06:00 and 07:00
+# UTC), so this takes a run longer than an hour.
 concurrency:
-  group: confirmations
+  group: issue
   cancel-in-progress: false
 
 jobs:
@@ -50,7 +76,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       # The command arrives through the environment and is checked against the
-      # three valid values before use, so it is never interpolated into the
+      # four valid values before use, so it is never interpolated into the
       # script. A scheduled run has no input and falls back to `open`.
       - name: Run the issue command
         env:
@@ -59,13 +85,13 @@ jobs:
           PULSE_SMTP_URL: ${{ secrets.PULSE_SMTP_URL }}
           PULSE_PUBLIC_URL: ${{ secrets.PULSE_PUBLIC_URL }}
           PULSE_EMAIL_FROM: ${{ secrets.PULSE_EMAIL_FROM }}
-          # Only `preview` reads the operator address; `open` and `publish` ignore it.
+          # Only `preview` reads the operator address; the other commands ignore it.
           PULSE_SUBSCRIBER_EMAIL: ${{ secrets.PULSE_SUBSCRIBER_EMAIL }}
         run: |
           case "$ISSUE_COMMAND" in
-            open | preview | publish) ;;
+            open | preview | publish | retry) ;;
             *)
-              echo "unknown issue command: $ISSUE_COMMAND (expected open, preview or publish)" >&2
+              echo "unknown issue command: $ISSUE_COMMAND (expected open, preview, publish or retry)" >&2
               exit 2
               ;;
           esac

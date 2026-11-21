@@ -1,18 +1,4 @@
-import type { SaveStatus } from "./use-saver.ts";
-
-const text = (status: SaveStatus): string => {
-  switch (status.kind) {
-    case "idle":
-      return "";
-    case "saving":
-      return "Saving…";
-    case "saved":
-      return "Saved.";
-    case "failed":
-      // The words "Not saved" carry the failure; the style only reinforces it.
-      return `Not saved: ${status.message} What you typed is still here.`;
-  }
-};
+import { saveStatusText, type SaveStatus } from "./use-saver.ts";
 
 interface SaveStatusLineProps {
   id: string;
@@ -31,6 +17,6 @@ export const SaveStatusLine = ({ id, status }: SaveStatusLineProps) => (
     id={id}
     role="status"
   >
-    {text(status)}
+    {saveStatusText(status)}
   </p>
 );

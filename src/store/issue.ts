@@ -147,38 +147,77 @@ export const getDraftIssue = async (sql: Sql): Promise<IssueView | null> => {
 /**
  * Publishes the open draft with one statement guarded by `status = 'draft'`, so
  * two concurrent publishes cannot both flip it and `published_at` is stamped
- * once. An issue with no included item and a blank intro has nothing to send,
- * so it is refused and stays a draft. The three outcomes are told apart with a
- * read after the update, which is safe because a draft only ever leaves that
- * state through this function.
+ * once.
+ *
+ * The same statement refuses a draft that is not ready to send: it needs a
+ * title, and at least one included item or an intro. The title rule is what
+ * stops an untouched draft from going out. `issue open` pre-fills a draft with
+ * a blank title, so a draft nobody has edited can never be published by
+ * mistake, however it was reached. The rule lives in the `where` clause, not in
+ * the caller, so no other code path can publish around it.
+ *
+ * The three outcomes are told apart with a read after the update, which is safe
+ * because a draft only ever leaves that state through this function.
  */
 export type PublishResult =
-  | { outcome: "published"; number: number }
-  | { outcome: "refused"; number: number }
+  | { outcome: "published"; id: string; number: number }
+  | { outcome: "refused"; number: number; missing: PublishRequirement[] }
   | { outcome: "no-draft" };
 
+/** What a refused draft still needs: the two halves of the publish guard. */
+export type PublishRequirement = "title" | "content";
+
 export const publishDraft = async (sql: Sql): Promise<PublishResult> => {
-  const published = await sql<{ number: number }[]>`
+  const published = await sql<{ id: string; number: number }[]>`
     update issue set status = 'published', published_at = now()
     where status = 'draft'
+      and btrim(title) <> ''
       and (
         btrim(intro) <> ''
         or exists (
           select 1 from issue_item where issue_item.issue_id = issue.id and issue_item.included
         )
       )
-    returning number
+    returning id, number
   `;
-  if (published[0]) return { outcome: "published", number: published[0].number };
-  const drafts = await sql<{ number: number }[]>`select number from issue where status = 'draft'`;
-  return drafts[0] ? { outcome: "refused", number: drafts[0].number } : { outcome: "no-draft" };
+  if (published[0]) {
+    return { outcome: "published", id: published[0].id, number: published[0].number };
+  }
+  const drafts = await sql<{ number: number; no_title: boolean; no_content: boolean }[]>`
+    select number,
+      btrim(title) = '' as no_title,
+      btrim(intro) = '' and not exists (
+        select 1 from issue_item where issue_item.issue_id = issue.id and issue_item.included
+      ) as no_content
+    from issue where status = 'draft'
+  `;
+  const draft = drafts[0];
+  if (!draft) return { outcome: "no-draft" };
+  return {
+    outcome: "refused",
+    number: draft.number,
+    missing: [
+      ...(draft.no_title ? (["title"] as const) : []),
+      ...(draft.no_content ? (["content"] as const) : []),
+    ],
+  };
 };
 
-/** The most recently published issue with its items, or null before the first publication. */
-export const getLatestPublishedIssue = async (sql: Sql): Promise<IssueView | null> => {
+/** A published issue's identity, enough to decide whether anyone is owed it. */
+export interface PublishedIssueRef {
+  id: string;
+  number: number;
+}
+
+/** Every published issue, oldest first, so a backlog is sent in the order it was written. */
+export const listPublishedIssues = async (sql: Sql): Promise<PublishedIssueRef[]> =>
+  sql<PublishedIssueRef[]>`select id, number from issue where status = 'published' order by number`;
+
+/** One issue with its items, whatever its status, or null when it does not exist. */
+export const getIssue = async (sql: Sql, id: string): Promise<IssueView | null> => {
   const issues = await sql<IssueRow[]>`
     select id, number, title, intro, status, window_start, window_end
-    from issue where status = 'published' order by number desc limit 1
+    from issue where id = ${id}
   `;
   return issues[0] ? issueView(sql, issues[0]) : null;
 };
@@ -231,6 +270,42 @@ export const subscribersAwaitingIssue = async (
 };
 
 /**
+ * The ids of subscribers a published issue is owed to who will not be tried
+ * again: they meet every condition `subscribersAwaitingIssue` checks, except
+ * that they have `MAX_FAILED_DELIVERIES` failed rows. Without this a run that
+ * gave up on someone would look identical to a run with nothing left to do.
+ * Ids, not addresses, because the result is printed to shared logs.
+ */
+export const subscribersOutOfRetries = async (
+  sql: Sql,
+  issueId: string,
+  channelId: string,
+): Promise<string[]> => {
+  const rows = await sql<{ id: string }[]>`
+    select s.id
+    from issue i
+    join subscriber s
+      on s.confirmed_at is not null
+     and s.unsubscribed_at is null
+     and s.confirmed_at <= i.published_at
+    where i.id = ${issueId}
+      and i.status = 'published'
+      and not exists (
+        select 1 from issue_delivery d
+        where d.issue_id = i.id and d.subscriber_id = s.id
+          and d.channel = ${channelId} and d.status = 'sent'
+      )
+      and (
+        select count(*) from issue_delivery d
+        where d.issue_id = i.id and d.subscriber_id = s.id
+          and d.channel = ${channelId} and d.status = 'failed'
+      ) >= ${MAX_FAILED_DELIVERIES}
+    order by s.confirmed_at, s.id
+  `;
+  return rows.map((row) => row.id);
+};
+
+/**
  * One `issue_delivery` row per attempt. A second `sent` row for the same issue,
  * subscriber and channel violates `issue_delivery_sent_once_idx` and throws,
  * exactly as `recordDelivery` does for a digest.
@@ -271,23 +346,77 @@ export const excludeEvent = async (
   await sql`select public.issue_exclude_event(${issueId}::uuid, ${eventId}::uuid)`;
 };
 
+/**
+ * Sets an item's note and section. Either may be null, which leaves that field
+ * as it is: a caller that only changed the section does not have to resend a
+ * note it may be holding stale. An empty string clears the note.
+ */
 export const annotateItem = async (
   sql: Queryable,
   issueId: string,
   eventId: string,
   note: string | null,
-  section: Section,
+  section: Section | null,
 ): Promise<void> => {
   await sql`
     select public.issue_annotate_item(${issueId}::uuid, ${eventId}::uuid, ${note}::text, ${section}::text)
   `;
 };
 
+/** Sets the title and the intro. Null leaves a field as it is; an empty string clears it. */
 export const setHeading = async (
   sql: Queryable,
   issueId: string,
-  title: string,
-  intro: string,
+  title: string | null,
+  intro: string | null,
 ): Promise<void> => {
   await sql`select public.issue_set_heading(${issueId}::uuid, ${title}::text, ${intro}::text)`;
+};
+
+/**
+ * An arbitrary constant naming "an issue send is running". Advisory locks are
+ * shared by every user of the database, and nothing else in this project takes
+ * one, so a single key is enough.
+ */
+const ISSUE_SEND_LOCK_KEY = 6_103_002;
+
+export type SendLockResult<T> = { acquired: true; value: T } | { acquired: false };
+
+/**
+ * Runs `run` while holding the issue-send lock, or returns `acquired: false`
+ * at once when another run already holds it.
+ *
+ * `publish` and `retry` both read the owed list and then send, so two runs at
+ * the same time would both mail every owed subscriber, and the second `sent`
+ * row would then violate the unique index and abort the run midway. The lock
+ * makes the second run stop before it reads anything.
+ *
+ * A session-level advisory lock belongs to one database connection, so it
+ * has to be taken and released on the same one, and `sql.reserve()` is what
+ * holds a single connection out of the pool. A query sent through the pool
+ * could be answered by a different connection each time, which would take the
+ * lock on one and try to release it on another. Releasing in `finally` frees
+ * it however the run ends, and if the process dies the server drops it when
+ * the connection closes. It needs a connection that lasts the whole run, so
+ * it does not work through a transaction-mode pooler (use Supabase's Session
+ * pooler or a direct connection, as the Actions workflows already do).
+ */
+export const withIssueSendLock = async <T>(
+  sql: Sql,
+  run: () => Promise<T>,
+): Promise<SendLockResult<T>> => {
+  const connection = await sql.reserve();
+  try {
+    const [row] = await connection<{ locked: boolean }[]>`
+      select pg_try_advisory_lock(${ISSUE_SEND_LOCK_KEY}::bigint) as locked
+    `;
+    if (!row!.locked) return { acquired: false };
+    try {
+      return { acquired: true, value: await run() };
+    } finally {
+      await connection`select pg_advisory_unlock(${ISSUE_SEND_LOCK_KEY}::bigint)`;
+    }
+  } finally {
+    connection.release();
+  }
 };

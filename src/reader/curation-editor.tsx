@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { formatUtcDate } from "../core/dates.ts";
 import { CurationItem, type SavedItem } from "./curation-item.tsx";
+import { useLeaveWarning } from "./leave-warning.ts";
 import { saveHeading, type CurationDraft } from "./issue-source.ts";
 import { SaveStatusLine } from "./save-status.tsx";
 import { getCuratorClient } from "./supabase.ts";
@@ -13,29 +15,53 @@ const PAGE = 50;
 const TITLE_MAX_LENGTH = 200;
 const INTRO_MAX_LENGTH = 4000;
 
-const formatDate = (iso: string): string =>
-  new Date(iso).toLocaleDateString("en-GB", { dateStyle: "long" });
-
-/** The title and the intro. They save together on blur because the database function takes both. */
-const Heading = ({ draft }: { draft: CurationDraft }) => {
+/** The title and the intro. Each saves on blur, and only the one whose text changed is sent. */
+const Heading = ({
+  draft,
+  onPending,
+}: {
+  draft: CurationDraft;
+  onPending: (id: string, pending: boolean) => void;
+}) => {
   const [title, setTitle] = useState(draft.title);
   const [intro, setIntro] = useState(draft.intro);
   const wanted = useRef({ title: draft.title, intro: draft.intro });
   const saved = useRef({ title: draft.title.trim(), intro: draft.intro.trim() });
+  const [savedHeading, setSavedHeading] = useState({
+    title: draft.title.trim(),
+    intro: draft.intro.trim(),
+  });
   const { status, save } = useSaver();
+
+  // A write in flight, or text on screen that differs from what is saved.
+  const pending =
+    status.kind === "saving" ||
+    title.trim() !== savedHeading.title ||
+    intro.trim() !== savedHeading.intro;
+  useEffect(() => {
+    onPending("heading", pending);
+    return () => onPending("heading", false);
+  }, [pending]);
 
   const saveText = () =>
     save(() => {
-      const next = { title: wanted.current.title.trim(), intro: wanted.current.intro.trim() };
-      if (next.title === saved.current.title && next.intro === saved.current.intro) return null;
+      const title = wanted.current.title.trim();
+      const intro = wanted.current.intro.trim();
+      const titleChanged = title !== saved.current.title;
+      const introChanged = intro !== saved.current.intro;
+      if (!titleChanged && !introChanged) return null;
       return async () => {
-        const result = await saveHeading(
-          getCuratorClient(),
-          draft.id,
-          wanted.current.title,
-          wanted.current.intro,
-        );
-        if (result.ok) saved.current = next;
+        // Only the field that changed is sent: the database leaves the other
+        // as it is, so a page that is out of date cannot overwrite it.
+        const result = await saveHeading(getCuratorClient(), draft.id, {
+          ...(titleChanged ? { title: wanted.current.title } : {}),
+          ...(introChanged ? { intro: wanted.current.intro } : {}),
+        });
+        if (result.ok) {
+          if (titleChanged) saved.current.title = title;
+          if (introChanged) saved.current.intro = intro;
+          setSavedHeading({ ...saved.current });
+        }
         return result;
       };
     });
@@ -97,6 +123,19 @@ export const CurationEditor = ({ draft }: { draft: CurationDraft }) => {
   );
   const revealed = useRef<string | null>(null);
 
+  // Which field groups have changes that are not saved yet, so the page can
+  // warn before it is left. The warning is registered only while one does.
+  const [pendingGroups, setPendingGroups] = useState<ReadonlySet<string>>(new Set());
+  const reportPending = (id: string, pending: boolean) =>
+    setPendingGroups((current) => {
+      if (current.has(id) === pending) return current;
+      const next = new Set(current);
+      if (pending) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  useLeaveWarning(pendingGroups.size > 0);
+
   const includedAtLoad = draft.events.filter((entry) => entry.included);
   const rest = draft.events.filter((entry) => !entry.included);
   const visible = [...includedAtLoad, ...rest.slice(0, limit)];
@@ -124,11 +163,11 @@ export const CurationEditor = ({ draft }: { draft: CurationDraft }) => {
         Issue #{draft.number} (draft)
       </h3>
       <p className="curation__window">
-        Covering <time dateTime={draft.windowStart}>{formatDate(draft.windowStart)}</time> to{" "}
-        <time dateTime={draft.windowEnd}>{formatDate(draft.windowEnd)}</time>. Changes save as you
-        make them.
+        Covering <time dateTime={draft.windowStart}>{formatUtcDate(draft.windowStart)}</time> to{" "}
+        <time dateTime={draft.windowEnd}>{formatUtcDate(draft.windowEnd)}</time> (UTC). Changes save
+        as you make them.
       </p>
-      <Heading draft={draft} />
+      <Heading draft={draft} onPending={reportPending} />
       <p className="curation__count">
         {withNote} of {includedNow.length} included items have a note.
       </p>
@@ -143,6 +182,7 @@ export const CurationEditor = ({ draft }: { draft: CurationDraft }) => {
             issueId={draft.id}
             entry={entry}
             onSaved={(id, item) => setSaved((current) => ({ ...current, [id]: item }))}
+            onPending={reportPending}
           />
         ))}
       </ol>

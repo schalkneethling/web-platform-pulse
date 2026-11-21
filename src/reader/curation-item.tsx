@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SECTION_LABELS, SECTION_ORDER, sectionFor, type Section } from "../core/issue.ts";
 import { sourceName } from "../core/provenance.ts";
 import { excludeEvent, includeEvent, saveNote, type CurationEvent } from "./issue-source.ts";
@@ -20,6 +20,8 @@ interface CurationItemProps {
   entry: CurationEvent;
   /** Called after a write succeeded, with what the database now holds. */
   onSaved: (eventId: string, saved: SavedItem) => void;
+  /** Called when this item gains or loses changes that are not saved yet. */
+  onPending: (eventId: string, pending: boolean) => void;
 }
 
 /**
@@ -32,13 +34,25 @@ interface CurationItemProps {
  * turn comes. Neither the row nor its controls are ever remounted by a save,
  * so keyboard focus stays on the control that was edited.
  */
-export const CurationItem = ({ issueId, entry, onSaved }: CurationItemProps) => {
+export const CurationItem = ({ issueId, entry, onSaved, onPending }: CurationItemProps) => {
   const { event } = entry;
   const [included, setIncluded] = useState(entry.included);
   const [section, setSection] = useState<Section>(entry.section);
   const [note, setNote] = useState(entry.note);
   const [savedNote, setSavedNote] = useState(entry.note.trim());
+  const [savedSection, setSavedSection] = useState<Section>(entry.section);
   const { status, save } = useSaver();
+
+  // Changes that would be lost by leaving: a write in flight, or text on
+  // screen that differs from what is saved. The text only counts while it is
+  // visible, because an excluded item has no note or section field to look at.
+  const pending =
+    status.kind === "saving" ||
+    (included && (note.trim() !== savedNote || section !== savedSection));
+  useEffect(() => {
+    onPending(event.id, pending);
+    return () => onPending(event.id, false);
+  }, [pending]);
 
   const wanted = useRef({ included: entry.included, section: entry.section, note: entry.note });
   const saved = useRef({
@@ -69,35 +83,49 @@ export const CurationItem = ({ issueId, entry, onSaved }: CurationItemProps) => 
           if (target && !saved.current.hasRow) {
             saved.current.hasRow = true;
             saved.current.section = sectionFor(event, false);
+            setSavedSection(saved.current.section);
           }
           onSaved(event.id, { included: target, note: saved.current.note });
         } else {
           // The checkbox must not claim a state the database does not hold.
           wanted.current.included = saved.current.included;
           setIncluded(saved.current.included);
+          // Said in the status too: this failure put the checkbox back, which
+          // is not what "what you typed is still here" would tell the person.
+          return { ...result, reverted: true };
         }
         return result;
       };
     });
   };
 
-  /** Writes the note and section together: the function takes both, and the
-   * one a person did not touch is whatever is on screen. */
+  /**
+   * Writes the note, the section, or both, but only the ones that differ from
+   * what is saved. The database function leaves a field it is not given as it
+   * is, so a page that was loaded before another save does not write back the
+   * stale value of the field the operator did not touch.
+   */
   const saveText = () =>
     save(() => {
       const { note: text, section: target } = wanted.current;
-      if (
-        !saved.current.hasRow ||
-        (text.trim() === saved.current.note && target === saved.current.section)
-      ) {
-        return null;
-      }
+      if (!saved.current.hasRow) return null;
+      const noteChanged = text.trim() !== saved.current.note;
+      const sectionChanged = target !== saved.current.section;
+      if (!noteChanged && !sectionChanged) return null;
       return async () => {
-        const result = await saveNote(getCuratorClient(), issueId, event.id, text, target);
+        const result = await saveNote(getCuratorClient(), issueId, event.id, {
+          ...(noteChanged ? { note: text } : {}),
+          ...(sectionChanged ? { section: target } : {}),
+        });
         if (result.ok) {
-          saved.current.note = text.trim();
-          saved.current.section = target;
-          setSavedNote(saved.current.note);
+          if (noteChanged) {
+            saved.current.note = text.trim();
+            setSavedNote(saved.current.note);
+          }
+          if (sectionChanged) {
+            saved.current.section = target;
+            setSavedSection(target);
+          }
           onSaved(event.id, { included: saved.current.included, note: saved.current.note });
         }
         return result;

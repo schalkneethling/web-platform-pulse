@@ -159,7 +159,12 @@ const fakeClient = (options: FakeOptions = {}) => {
     auth: {
       getSession: () =>
         Promise.resolve({
-          data: { session: options.session === false ? null : { access_token: "t" } },
+          data: {
+            session:
+              options.session === false
+                ? null
+                : { access_token: "t", user: { id: "user-1", email: "someone@example.com" } },
+          },
         }),
     },
     from: (table: string) => {
@@ -200,7 +205,9 @@ describe("fetchCuration", () => {
 
   it("asks the database whether the account is the operator, and reads nothing for a stranger", async () => {
     const { client, calls, rpcs } = fakeClient({ operator: false, issue: issueRow() });
-    expect(await fetchCuration(client)).toEqual({ status: "not-operator" });
+    // The state carries the account's id so the page can show it, and nothing
+    // else about the account: not the address the session also holds.
+    expect(await fetchCuration(client)).toEqual({ status: "not-operator", userId: "user-1" });
     expect(rpcs).toEqual([{ name: "is_operator_request", args: undefined }]);
     expect(calls).toEqual([]);
   });
@@ -276,24 +283,31 @@ describe("curation writes", () => {
     ]);
   });
 
-  it("saves a note with its section, and a heading with both fields", async () => {
+  it("sends only the field that changed, and null for the other so the database keeps it", async () => {
     const { client, rpcs } = fakeClient();
-    await saveNote(client, "i1", "e1", "Why it matters", "lead");
-    await saveHeading(client, "i1", "Title", "Intro");
+    await saveNote(client, "i1", "e1", { note: "Why it matters" });
+    await saveNote(client, "i1", "e1", { section: "lead" });
+    await saveNote(client, "i1", "e1", { note: "", section: "watch" });
+    await saveHeading(client, "i1", { title: "Title" });
+    await saveHeading(client, "i1", { intro: "Intro" });
+    await saveHeading(client, "i1", { title: "", intro: "" });
+
+    const annotate = (note: string | null, section: string | null) => ({
+      name: "issue_annotate_item",
+      args: { target_issue: "i1", target_event: "e1", new_note: note, new_section: section },
+    });
+    const heading = (title: string | null, intro: string | null) => ({
+      name: "issue_set_heading",
+      args: { target_issue: "i1", new_title: title, new_intro: intro },
+    });
     expect(rpcs).toEqual([
-      {
-        name: "issue_annotate_item",
-        args: {
-          target_issue: "i1",
-          target_event: "e1",
-          new_note: "Why it matters",
-          new_section: "lead",
-        },
-      },
-      {
-        name: "issue_set_heading",
-        args: { target_issue: "i1", new_title: "Title", new_intro: "Intro" },
-      },
+      annotate("Why it matters", null),
+      annotate(null, "lead"),
+      // An empty string is a value: it clears the note.
+      annotate("", "watch"),
+      heading("Title", null),
+      heading(null, "Intro"),
+      heading("", ""),
     ]);
   });
 
@@ -306,7 +320,7 @@ describe("curation writes", () => {
     });
 
     const other = fakeClient({ rpcError: { code: "55000", message: "issue 3 is published" } });
-    expect(await saveHeading(other.client, "i1", "t", "i")).toEqual({
+    expect(await saveHeading(other.client, "i1", { title: "t" })).toEqual({
       ok: false,
       reason: "failed",
       message: "issue 3 is published",

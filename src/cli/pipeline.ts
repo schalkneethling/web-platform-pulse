@@ -1,7 +1,6 @@
 import type { SourceAdapter } from "../core/adapter.ts";
 import type { DeliveryChannel } from "../core/delivery.ts";
 import type { CandidateEvent } from "../core/types.ts";
-import { scrubCredentials } from "../delivery/scrub.ts";
 import type { Sql } from "../store/db.ts";
 import {
   activeSubscriberIds,
@@ -56,9 +55,10 @@ const deliverPending = async (sql: Sql, channels: DeliveryChannel[]): Promise<De
       });
       await recordDelivery(sql, pending.digestId, channel.id, result);
       if (result.status === "failed") {
+        // The diagnostic, not the error: CI logs are shared and the error
+        // can name the recipient.
         console.error(
-          `delivery of digest ${pending.digestId} via ${channel.id} failed: ` +
-            scrubCredentials(result.error),
+          `delivery of digest ${pending.digestId} via ${channel.id} failed: ${result.diagnostic}`,
         );
       }
       summary[result.status] += 1;

@@ -38,11 +38,13 @@ export interface CurationDraft {
  * - `signed-out`: there is no session, so nothing was asked.
  * - `not-operator`: a session exists but `is_operator_request()` is false, so
  *   the `authenticated` role would read no rows and every write would be a 42501.
+ *   It carries the signed-in account's auth user id, which the operator needs to
+ *   run `operator link`, and nothing else about the account.
  * - `no-draft`: the operator is signed in and no issue is open.
  */
 export type CurationState =
   | { status: "signed-out" }
-  | { status: "not-operator" }
+  | { status: "not-operator"; userId: string }
   | { status: "no-draft" }
   | { status: "draft"; draft: CurationDraft };
 
@@ -145,7 +147,8 @@ export const fetchCuration = async (client: SupabaseClient): Promise<CurationSta
 
   const operator = await client.rpc("is_operator_request");
   if (operator.error) throw new Error(operator.error.message);
-  if (operator.data !== true) return { status: "not-operator" };
+  if (operator.data !== true)
+    return { status: "not-operator", userId: sessionData.session.user.id };
 
   const { data: issue, error } = await client
     .from("issue")
@@ -199,32 +202,42 @@ export const includeEvent = (client: SupabaseClient, issueId: string, eventId: s
 export const excludeEvent = (client: SupabaseClient, issueId: string, eventId: string) =>
   write(client.rpc("issue_exclude_event", { target_issue: issueId, target_event: eventId }));
 
+/**
+ * What the operator changed about an item. A field that is absent is sent as
+ * null, which the database function reads as "leave it as it is", so a save
+ * from a page that has gone stale cannot overwrite the field it did not touch.
+ */
+export interface NoteChange {
+  note?: string;
+  section?: Section;
+}
+
 export const saveNote = (
   client: SupabaseClient,
   issueId: string,
   eventId: string,
-  note: string,
-  section: Section,
+  change: NoteChange,
 ) =>
   write(
     client.rpc("issue_annotate_item", {
       target_issue: issueId,
       target_event: eventId,
-      new_note: note,
-      new_section: section,
+      new_note: change.note ?? null,
+      new_section: change.section ?? null,
     }),
   );
 
-export const saveHeading = (
-  client: SupabaseClient,
-  issueId: string,
-  title: string,
-  intro: string,
-) =>
+/** The same rule for the heading: only a field that changed is sent. */
+export interface HeadingChange {
+  title?: string;
+  intro?: string;
+}
+
+export const saveHeading = (client: SupabaseClient, issueId: string, change: HeadingChange) =>
   write(
     client.rpc("issue_set_heading", {
       target_issue: issueId,
-      new_title: title,
-      new_intro: intro,
+      new_title: change.title ?? null,
+      new_intro: change.intro ?? null,
     }),
   );

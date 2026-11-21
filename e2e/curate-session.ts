@@ -7,7 +7,6 @@ import { authenticatedToken } from "../scripts/dev-rest.ts";
 const STORAGE_KEY = "pulse-curator-auth";
 
 export interface SeededSession {
-  email: string;
   accessToken: string;
 }
 
@@ -15,7 +14,7 @@ export interface SeededSession {
  * Signs a browser context in the way supabase-js remembers a sign-in: by
  * writing the session it would have stored after the Google redirect. The
  * access token is minted with the local secret, so PostgREST verifies it like
- * a real one. Nothing in the reader knows about this; it is the same
+ * a real one, and its `sub` is `userId`, which is what the operator check reads. Nothing in the reader knows about this; it is the same
  * localStorage entry the SDK reads on every page load.
  *
  * The session never expires during a test (an hour) and its refresh token is
@@ -28,10 +27,10 @@ export interface SeededSession {
  */
 export const signInAs = async (
   context: BrowserContext,
-  email: string,
-  providers: string[] = ["google"],
+  userId: string,
+  email?: string,
 ): Promise<SeededSession> => {
-  const accessToken = authenticatedToken(email, providers);
+  const accessToken = authenticatedToken(userId, email);
   const now = Math.floor(Date.now() / 1000);
   const session = {
     access_token: accessToken,
@@ -40,11 +39,12 @@ export const signInAs = async (
     expires_in: 3600,
     expires_at: now + 3600,
     user: {
-      id: "00000000-0000-4000-8000-000000000001",
+      id: userId,
       aud: "authenticated",
       role: "authenticated",
-      email,
-      app_metadata: { provider: providers[0], providers },
+      // Present in a real session, so a page that displayed it would be caught.
+      ...(email === undefined ? {} : { email }),
+      app_metadata: { provider: "google", providers: ["google"] },
       user_metadata: {},
       created_at: new Date(now * 1000).toISOString(),
     },
@@ -55,5 +55,5 @@ export const signInAs = async (
     },
     { key: STORAGE_KEY, value: JSON.stringify(session) },
   );
-  return { email, accessToken };
+  return { accessToken };
 };
