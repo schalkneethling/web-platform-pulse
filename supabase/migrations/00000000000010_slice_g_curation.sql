@@ -177,9 +177,15 @@ revoke execute on function issue_lock_draft(uuid) from public, anon, authenticat
 -- at the end. The section comes from the event type here in SQL, repeating
 -- `sectionFor` in src/core/issue.ts minus `lead`, because passing it in would
 -- let the browser pick any section on include and the function would still
--- need the vocabulary to validate it. An integration test compares this
--- mapping with `sectionFor` for every event type, so the two cannot drift
--- unnoticed.
+-- need the vocabulary to validate it.
+--
+-- The two copies of the mapping can drift, and two things catch it. Every type
+-- is listed explicitly and there is no default branch: a type that exists in
+-- TypeScript and not here makes the include raise, naming the type, instead of
+-- quietly landing in `watch`. And the integration test derives its list of
+-- types from a `Record<ChangeEventType, Section>`, so a new type fails to
+-- compile there until it is listed, and fails at run time until this function
+-- knows it.
 create function issue_include_event(target_issue uuid, target_event uuid)
 returns void
 language plpgsql
@@ -189,6 +195,7 @@ as $$
 declare
   draft public.issue%rowtype;
   candidate public.change_event%rowtype;
+  item_section text;
 begin
   perform public.issue_require_curator();
   draft := public.issue_lock_draft(target_issue);
@@ -210,19 +217,28 @@ begin
     return;
   end if;
 
+  item_section := case candidate.type
+    when 'editorial' then 'voices'
+    when 'baseline-change' then 'shipped'
+    when 'browser-support' then 'shipped'
+    when 'browser-release' then 'shipped'
+    when 'runtime-release' then 'shipped'
+    when 'spec-change' then 'watch'
+    when 'vendor-position' then 'watch'
+    when 'feature-status' then 'watch'
+    when 'tag-review' then 'watch'
+  end;
+  if item_section is null then
+    raise exception 'change event type "%" has no section: add it to issue_include_event and to sectionFor',
+      candidate.type using errcode = '22023';
+  end if;
+
   insert into public.issue_item (issue_id, event_id, position, section)
   values (
     target_issue,
     target_event,
     coalesce((select max(position) from public.issue_item where issue_id = target_issue), 0) + 1,
-    case candidate.type
-      when 'editorial' then 'voices'
-      when 'baseline-change' then 'shipped'
-      when 'browser-support' then 'shipped'
-      when 'browser-release' then 'shipped'
-      when 'runtime-release' then 'shipped'
-      else 'watch'
-    end
+    item_section
   );
 end;
 $$;
