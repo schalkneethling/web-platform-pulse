@@ -125,13 +125,19 @@ walkthrough and what comes next.
 - **Cloudflare Workers** hosts the reader as static assets (`wrangler.jsonc`),
   deployed by `.github/workflows/deploy.yml` on every push to `main`.
 
-The one repository secret is `OP_SERVICE_ACCOUNT_TOKEN`: a 1Password service
-account with read access to the `dev` vault. Both workflows run under
-`APP_ENV=production`, resolve `.env.schema` through it, and take everything
-else -- `DATABASE_URL`, `PULSE_SMTP_URL`, `PULSE_SUBSCRIBER_EMAIL`,
-`PULSE_EMAIL_FROM`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
-`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` -- from the
-`web-platform-pulse` item. Rotating a value means editing that item.
+1Password is used on the development machine only. The workflows read
+GitHub's own repository secrets -- `DATABASE_URL`, `PULSE_SMTP_URL`,
+`PULSE_SUBSCRIBER_EMAIL`, `PULSE_EMAIL_FROM`, `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_ANON_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` --
+and one command copies them there from the `web-platform-pulse` item:
+
+```sh
+vp run secrets:push --dry-run   # list what would be pushed
+vp run secrets:push             # resolve from 1Password, push with `gh secret set`
+```
+
+Rotating a value means editing the item and running that command again. No
+1Password credential lives outside the laptop, so there is no service account.
 
 The two `VITE_` values are compiled into the bundle and are public by design:
 the anon key selects a Postgres role, and `supabase/migrations/` is what

@@ -14,7 +14,15 @@ import { REST_URL } from "./scripts/dev-rest.ts";
 //
 // Imported here rather than at the top: merely importing the integration
 // resolves the schema, so a static import would put the prompt back.
-const needsConfig = ["dev", "build", "preview"].includes(process.env.VP_RAW_SUBCOMMAND ?? "");
+//
+// Not under APP_ENV=production either. There the host's own secret store
+// supplies the two VITE_ values as plain environment variables, which Vite
+// reads without help, and Varlock would insist on every other item in the
+// schema -- the database URL, the SMTP credentials -- being handed to a job
+// that only builds a static bundle.
+const needsConfig =
+  ["dev", "build", "preview"].includes(process.env.VP_RAW_SUBCOMMAND ?? "") &&
+  process.env.APP_ENV !== "production";
 const plugins = [react(), babel({ presets: [reactCompilerPreset()] })];
 if (needsConfig) {
   const { varlockVitePlugin } = await import("@varlock/vite-integration");

@@ -1,6 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/**/*.test.ts", "tests/integration/**/*.test.ts", "e2e/**/*.spec.ts"],
+  "entry": [
+    "src/**/*.test.ts",
+    "tests/integration/**/*.test.ts",
+    "e2e/**/*.spec.ts",
+    "scripts/push-secrets.ts"
+  ],
   "ignoreExportsUsedInFile": true,
   "ignoreDependencies": ["@varlock/1password-plugin"]
 }

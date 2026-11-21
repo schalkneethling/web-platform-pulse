@@ -9,6 +9,7 @@
     "preview": "vp preview",
     "prepare": "vp config",
     "pulse": "varlock run -- bun run src/cli/index.ts",
+    "secrets:push": "varlock run -- bun run scripts/push-secrets.ts",
     "db:up": "bun run scripts/db-up.ts",
     "dev:reader": "bun run scripts/dev-reader.ts",
     "test:e2e": "playwright test",
