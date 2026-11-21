@@ -219,3 +219,119 @@ body {
   margin: var(--space-s) 0 0;
   color: var(--color-muted);
 }
+
+.reader__curate-title {
+  margin: 0 0 var(--space-m);
+  font-size: var(--font-size-l);
+}
+
+/* The operator's curation page. Layout only; the controls keep the browser's
+ * own look so they stay recognisable as controls. */
+.curation__title {
+  margin: 0;
+  font-size: var(--font-size-m);
+}
+
+.curation__window,
+.curation__count,
+.curation__shown {
+  margin: var(--space-xs) 0 var(--space-m);
+  color: var(--color-muted);
+  font-size: var(--font-size-s);
+}
+
+.curation__heading,
+.curation-item__fieldset {
+  margin: 0 0 var(--space-m);
+  padding: var(--space-m);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-m);
+}
+
+.curation__legend,
+.curation-item__legend {
+  padding-inline: var(--space-xs);
+  font-weight: 600;
+}
+
+.curation__field {
+  display: grid;
+  gap: var(--space-xs);
+  margin-block-end: var(--space-s);
+}
+
+.curation__field label {
+  font-size: var(--font-size-s);
+  color: var(--color-muted);
+}
+
+.curation__field :is(input, textarea, select) {
+  inline-size: 100%;
+  box-sizing: border-box;
+  padding: var(--space-s) var(--space-m);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-m);
+  background: var(--color-bg);
+  color: inherit;
+  font: inherit;
+}
+
+.curation__field select {
+  inline-size: auto;
+}
+
+.curation__items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.curation-item__link {
+  color: var(--color-accent);
+}
+
+.curation-item__source {
+  color: var(--color-muted);
+  font-weight: 400;
+  font-size: var(--font-size-s);
+}
+
+.curation-item__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-s);
+  margin-block-end: var(--space-s);
+}
+
+/* "No note yet" is text with a border, so it does not depend on its colour. */
+.curation-item__flag {
+  padding: 0 var(--space-s);
+  border: 1px solid var(--color-muted);
+  border-radius: var(--radius-m);
+  color: var(--color-muted);
+  font-size: var(--font-size-s);
+}
+
+.curation__status {
+  min-block-size: 1.6em;
+  margin: var(--space-xs) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-s);
+}
+
+/* The failure text starts with "Not saved"; the rule only adds emphasis. */
+.curation__status--failed {
+  padding-inline-start: var(--space-s);
+  border-inline-start: 0.25rem solid currentColor;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.button--secondary {
+  margin-block-start: var(--space-m);
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
