@@ -37,7 +37,7 @@ jobs:
           # workflow_run checks out the default branch by default, not the
           # commit that was tested.
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
-      - uses: voidzero-dev/setup-vp@v1.15.0
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
           node-version: "24"
           cache: true
