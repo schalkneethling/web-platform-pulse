@@ -168,7 +168,10 @@ published issue, oldest issue first.
 while next week's draft is open. It sends the emails that failed, for the newest
 issue or an older one. Neither command sends anything twice: a subscriber with a
 `sent` row is never selected again, and a subscriber is retried until five sends
-have failed. A run that has a failed send exits 1.
+have failed. A run that has a failed send exits 1, and so does a run that finds
+a subscriber who has used all five attempts: it names the issue, how many
+subscribers and their ids, because nothing will retry them and a clean exit
+would hide that.
 
 Only one `publish` or `retry` runs at a time. Each takes a Postgres advisory
 lock for the whole run, and a run that cannot get it prints that another is

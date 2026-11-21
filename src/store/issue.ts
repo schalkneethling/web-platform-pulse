@@ -270,6 +270,42 @@ export const subscribersAwaitingIssue = async (
 };
 
 /**
+ * The ids of subscribers a published issue is owed to who will not be tried
+ * again: they meet every condition `subscribersAwaitingIssue` checks, except
+ * that they have `MAX_FAILED_DELIVERIES` failed rows. Without this a run that
+ * gave up on someone would look identical to a run with nothing left to do.
+ * Ids, not addresses, because the result is printed to shared logs.
+ */
+export const subscribersOutOfRetries = async (
+  sql: Sql,
+  issueId: string,
+  channelId: string,
+): Promise<string[]> => {
+  const rows = await sql<{ id: string }[]>`
+    select s.id
+    from issue i
+    join subscriber s
+      on s.confirmed_at is not null
+     and s.unsubscribed_at is null
+     and s.confirmed_at <= i.published_at
+    where i.id = ${issueId}
+      and i.status = 'published'
+      and not exists (
+        select 1 from issue_delivery d
+        where d.issue_id = i.id and d.subscriber_id = s.id
+          and d.channel = ${channelId} and d.status = 'sent'
+      )
+      and (
+        select count(*) from issue_delivery d
+        where d.issue_id = i.id and d.subscriber_id = s.id
+          and d.channel = ${channelId} and d.status = 'failed'
+      ) >= ${MAX_FAILED_DELIVERIES}
+    order by s.confirmed_at, s.id
+  `;
+  return rows.map((row) => row.id);
+};
+
+/**
  * One `issue_delivery` row per attempt. A second `sent` row for the same issue,
  * subscriber and channel violates `issue_delivery_sent_once_idx` and throws,
  * exactly as `recordDelivery` does for a digest.

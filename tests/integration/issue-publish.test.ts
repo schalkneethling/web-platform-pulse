@@ -450,6 +450,51 @@ describe("issue retry", () => {
     expect(await deliveries("bob@example.com")).toHaveLength(MAX_FAILED_DELIVERIES);
   });
 
+  it("reports a subscriber who ran out of retries, per issue, and exits non-zero", async () => {
+    await signUp("alice@example.com");
+    const bobId = await signUp("bob@example.com");
+    await openAnnotatedDraft();
+    expect((await publish(failingFor("bob@example.com"))).ok).toBe(false);
+    for (let attempt = 1; attempt < MAX_FAILED_DELIVERIES; attempt += 1) {
+      await retry(failingFor("bob@example.com"));
+    }
+
+    const { ok, lines } = await retry(mustNotSend);
+
+    expect(ok).toBe(false);
+    const report = lines.join("\n");
+    expect(report).toContain(
+      `issue #1: 1 subscriber has used all ${MAX_FAILED_DELIVERIES} attempts and will not be retried (${bobId})`,
+    );
+    expect(report).not.toMatch(/nothing is waiting/);
+    expect(report).not.toContain("bob@example.com");
+    // Publishing is held to the same standard as retrying.
+    await ingestCandidates(sql, [candidate("next")]);
+    await openIssue(sql, new Date(Date.now() + 60_000));
+    const next = (await getDraftIssue(sql))!;
+    await setHeading(sql, next.id, "Week two", "Intro.");
+    const published = await publish(recorder().send);
+    expect(published.ok).toBe(false);
+    expect(published.lines.join("\n")).toContain("issue #1: 1 subscriber has used all");
+    expect(published.lines).toContain("issue #2: 2 sent, 0 failed");
+  });
+
+  it("does not count an unsubscribed subscriber as out of retries", async () => {
+    await signUp("alice@example.com");
+    const bobId = await signUp("bob@example.com");
+    await openAnnotatedDraft();
+    expect((await publish(failingFor("bob@example.com"))).ok).toBe(false);
+    for (let attempt = 1; attempt < MAX_FAILED_DELIVERIES; attempt += 1) {
+      await retry(failingFor("bob@example.com"));
+    }
+    await unsubscribe(sql, await tokenOf("bob@example.com"));
+
+    const { ok, lines } = await retry(mustNotSend);
+
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).not.toContain(bobId);
+  });
+
   // The review's scenario. The Sunday schedule opens next week's draft while an
   // older issue still has a failed send; retrying must reach the older issue
   // and must not publish the draft nobody has written yet.

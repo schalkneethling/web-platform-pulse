@@ -4,6 +4,7 @@ import { renderIssueEmail } from "../delivery/issue-email.ts";
 import { unsubscribeUrl } from "../delivery/links.ts";
 import { scrubCredentials } from "../delivery/scrub.ts";
 import type { Sql } from "../store/db.ts";
+import { MAX_FAILED_DELIVERIES } from "../store/store.ts";
 import {
   getDraftIssue,
   getIssue,
@@ -13,6 +14,7 @@ import {
   type PublishRequirement,
   recordIssueDelivery,
   subscribersAwaitingIssue,
+  subscribersOutOfRetries,
   withIssueSendLock,
 } from "../store/issue.ts";
 import type { CliValues } from "./command.ts";
@@ -158,47 +160,64 @@ const sendOwedIssues = async (
 ): Promise<FanOutSummary> => {
   let ok = true;
   let attempted = 0;
+  let gaveUp = 0;
   for (const { id, number } of await listPublishedIssues(sql)) {
     const pending = await subscribersAwaitingIssue(sql, id, ISSUE_CHANNEL);
-    if (pending.length === 0) continue;
-    // Loaded only for an issue somebody is owed: most published issues are
-    // long since delivered and need no rendering.
-    const issue = (await getIssue(sql, id))!;
+    if (pending.length > 0) {
+      // Loaded only for an issue somebody is owed: most published issues are
+      // long since delivered and need no rendering.
+      const issue = (await getIssue(sql, id))!;
 
-    let sent = 0;
-    let failed = 0;
-    for (const recipient of pending) {
-      const link = unsubscribeUrl(deps.publicUrl, recipient.unsubscribeToken);
-      try {
-        await deps.send({
-          ...renderIssueEmail(issue, issue.items, { unsubscribeLink: link, preview: false }),
-          from: deps.from,
-          to: recipient.email,
-          headers: { "List-Unsubscribe": `<${link}>` },
-        });
-      } catch (error) {
-        // The address is deliberately not logged: CI logs are shared.
-        const message = scrubCredentials(error instanceof Error ? error.message : String(error));
+      let sent = 0;
+      let failed = 0;
+      for (const recipient of pending) {
+        const link = unsubscribeUrl(deps.publicUrl, recipient.unsubscribeToken);
+        try {
+          await deps.send({
+            ...renderIssueEmail(issue, issue.items, { unsubscribeLink: link, preview: false }),
+            from: deps.from,
+            to: recipient.email,
+            headers: { "List-Unsubscribe": `<${link}>` },
+          });
+        } catch (error) {
+          // The address is deliberately not logged: CI logs are shared.
+          const message = scrubCredentials(error instanceof Error ? error.message : String(error));
+          await recordIssueDelivery(sql, id, recipient.subscriberId, ISSUE_CHANNEL, {
+            status: "failed",
+            error: message,
+          });
+          console.error(
+            `issue #${number} to subscriber ${recipient.subscriberId} failed: ${message}`,
+          );
+          failed += 1;
+          continue;
+        }
         await recordIssueDelivery(sql, id, recipient.subscriberId, ISSUE_CHANNEL, {
-          status: "failed",
-          error: message,
+          status: "sent",
         });
-        console.error(
-          `issue #${number} to subscriber ${recipient.subscriberId} failed: ${message}`,
-        );
-        failed += 1;
-        continue;
+        sent += 1;
       }
-      await recordIssueDelivery(sql, id, recipient.subscriberId, ISSUE_CHANNEL, {
-        status: "sent",
-      });
-      sent += 1;
+      write(`issue #${number}: ${sent} sent, ${failed} failed`);
+      attempted += sent + failed;
+      if (failed > 0) ok = false;
     }
-    write(`issue #${number}: ${sent} sent, ${failed} failed`);
-    attempted += sent + failed;
-    if (failed > 0) ok = false;
+
+    // Asked after the sends, so a subscriber whose last allowed attempt just
+    // failed is reported in the same run instead of one run later.
+    const exhausted = await subscribersOutOfRetries(sql, id, ISSUE_CHANNEL);
+    if (exhausted.length > 0) {
+      const who =
+        exhausted.length === 1 ? "1 subscriber has" : `${exhausted.length} subscribers have`;
+      write(
+        `issue #${number}: ${who} used all ${MAX_FAILED_DELIVERIES} attempts and will not be retried ` +
+          `(${exhausted.join(", ")})`,
+      );
+      gaveUp += exhausted.length;
+      ok = false;
+    }
   }
-  if (attempted === 0) write("nothing is waiting to be sent");
+  // A run that gave up on someone is not "nothing to do", so it never says so.
+  if (attempted === 0 && gaveUp === 0) write("nothing is waiting to be sent");
   return { ok, attempted };
 };
 
@@ -239,8 +258,8 @@ const requirementText: Record<PublishRequirement, string> = {
  * is one with no included item and no intro. With no draft, use `issue retry`
  * to resend failed emails.
  *
- * Returns false when there was no draft, the draft was refused or any send
- * failed, which the dispatcher turns into exit code 1.
+ * Returns false when there was no draft, the draft was refused, any send
+ * failed or any subscriber has used up their retries, which the dispatcher turns into exit code 1.
  */
 export const runIssuePublish = (
   sql: Sql,
@@ -283,7 +302,7 @@ const publishAndSend = async (
  * first, and publish nothing. This is the command for a failed send, whether
  * it failed in the last run or an issue ago; it never touches a draft, so it
  * is safe to run while next week's draft is open. Returns false when any send
- * failed.
+ * failed or any subscriber has used up their retries.
  */
 export const runIssueRetry = (
   sql: Sql,
