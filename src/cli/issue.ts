@@ -2,7 +2,7 @@ import { isUnannotated } from "../core/issue.ts";
 import type { SendEmail } from "../delivery/email.ts";
 import { renderIssueEmail } from "../delivery/issue-email.ts";
 import { unsubscribeUrl } from "../delivery/links.ts";
-import { scrubCredentials } from "../delivery/scrub.ts";
+import { describeSendFailure } from "../delivery/scrub.ts";
 import type { Sql } from "../store/db.ts";
 import { MAX_FAILED_DELIVERIES } from "../store/store.ts";
 import {
@@ -180,14 +180,17 @@ const sendOwedIssues = async (
             headers: { "List-Unsubscribe": `<${link}>` },
           });
         } catch (error) {
-          // The address is deliberately not logged: CI logs are shared.
-          const message = scrubCredentials(error instanceof Error ? error.message : String(error));
+          // The database keeps the scrubbed message. The log gets the codes
+          // only: CI logs are shared and nodemailer appends the server's reply,
+          // which usually names the recipient, to the message.
+          const { message, diagnostic } = describeSendFailure(error);
           await recordIssueDelivery(sql, id, recipient.subscriberId, ISSUE_CHANNEL, {
             status: "failed",
             error: message,
+            diagnostic,
           });
           console.error(
-            `issue #${number} to subscriber ${recipient.subscriberId} failed: ${message}`,
+            `issue #${number} to subscriber ${recipient.subscriberId} failed: ${diagnostic}`,
           );
           failed += 1;
           continue;

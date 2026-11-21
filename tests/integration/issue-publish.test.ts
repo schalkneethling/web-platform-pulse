@@ -1,7 +1,7 @@
 // Slice G.4 outer test: `issue publish` flips the draft, sends the issue once to
 // every confirmed subscriber, and only ever retries what failed. Real Postgres
 // and the local mail catcher.
-import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { MAILPIT_API_URL, MAILPIT_SMTP_URL } from "../../scripts/dev-mail.ts";
 import { runIssuePublish, runIssueRetry } from "../../src/cli/issue.ts";
 import type { CandidateEvent } from "../../src/core/types.ts";
@@ -436,6 +436,38 @@ describe("issue retry", () => {
       expect((await deliveries("alice@example.com")).map((row) => row.status)).toEqual(["sent"]);
     },
   );
+
+  it("logs a failed send by code and subscriber id, never the address or the server's reply", async () => {
+    const bobId = await signUp("bob@example.com");
+    await openAnnotatedDraft();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    let output = "";
+    const rejection = Object.assign(
+      new Error("all recipients were rejected: 550 5.1.1 <bob@example.com>: no such user"),
+      { code: "EENVELOPE", responseCode: 550 },
+    );
+
+    try {
+      expect(
+        (
+          await publish(async () => {
+            throw rejection;
+          })
+        ).ok,
+      ).toBe(false);
+      output = logged.mock.calls.flat().join("\n");
+    } finally {
+      logged.mockRestore();
+    }
+
+    expect(output).toContain(
+      `issue #1 to subscriber ${bobId} failed: code EENVELOPE, response code 550`,
+    );
+    expect(output).not.toContain("bob@example.com");
+    expect(output).not.toContain("no such user");
+    // The database keeps the full message for the operator who goes looking.
+    expect((await deliveries("bob@example.com"))[0]!.error).toContain("no such user");
+  });
 
   it("stops retrying a subscriber after MAX_FAILED_DELIVERIES failures", async () => {
     await signUp("bob@example.com");

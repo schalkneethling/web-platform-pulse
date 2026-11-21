@@ -1,7 +1,7 @@
 import { renderConfirmationEmail } from "../delivery/confirmation.ts";
 import type { SendEmail } from "../delivery/email.ts";
 import { confirmUrl } from "../delivery/links.ts";
-import { scrubCredentials } from "../delivery/scrub.ts";
+import { describeSendFailure } from "../delivery/scrub.ts";
 import type { Sql } from "../store/db.ts";
 import {
   confirmationsAwaitingSend,
@@ -73,10 +73,10 @@ export const sendPendingConfirmations = async (
         to: email,
       });
     } catch (error) {
-      // The address is deliberately not logged: CI logs are shared.
+      // Only the code is logged, never the message: CI logs are shared and
+      // nodemailer puts the server's reply, which names the address, in it.
       console.error(
-        `confirmation ${subscriberId} failed: ` +
-          scrubCredentials(error instanceof Error ? error.message : String(error)),
+        `confirmation ${subscriberId} failed: ${describeSendFailure(error).diagnostic}`,
       );
       await recordConfirmationFailed(sql, subscriberId);
       summary.failed += 1;

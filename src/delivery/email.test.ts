@@ -293,6 +293,10 @@ describe("createEmailChannel", () => {
     });
     expect(
       await channel.send(digest([event("lh", {})]), { email: "a@b.co", unsubscribeToken: "t" }),
-    ).toEqual({ status: "failed", error: "connection refused" });
+    ).toEqual({
+      status: "failed",
+      error: "connection refused",
+      diagnostic: "code none, response code none",
+    });
   });
 });

@@ -2,7 +2,7 @@
 // subscriber, and the pipeline mails them a confirmation link keyed on their
 // confirm_token. Real Postgres and real Mailpit; the write path under test is
 // the same request_subscription function the browser calls through PostgREST.
-import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { MAILPIT_API_URL, MAILPIT_SMTP_URL } from "../../scripts/dev-mail.ts";
 import { sendPendingConfirmations } from "../../src/cli/confirmations.ts";
 import { createSmtpSender } from "../../src/delivery/smtp.ts";
@@ -258,6 +258,32 @@ describe("sendPendingConfirmations", () => {
       expect(await subscribers()).toMatchObject([{ confirmation_attempts: 2 }]);
     },
   );
+
+  it("logs a failed confirmation by code and subscriber id, never the address or the server's reply", async () => {
+    await requestSubscription(sql, "new@example.com");
+    const [row] = await sql<{ id: string }[]>`select id from subscriber`;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    let output = "";
+    const rejection = Object.assign(
+      new Error("all recipients were rejected: 550 5.1.1 <new@example.com>: no such user"),
+      { code: "EENVELOPE", responseCode: 550 },
+    );
+
+    try {
+      expect(
+        await sendWith(async () => {
+          throw rejection;
+        }),
+      ).toMatchObject({ failed: 1 });
+      output = logged.mock.calls.flat().join("\n");
+    } finally {
+      logged.mockRestore();
+    }
+
+    expect(output).toContain(`confirmation ${row!.id} failed: code EENVELOPE, response code 550`);
+    expect(output).not.toContain("new@example.com");
+    expect(output).not.toContain("no such user");
+  });
 
   it("stops retrying a row after three failed attempts", async () => {
     await requestSubscription(sql, "dead@example.com");

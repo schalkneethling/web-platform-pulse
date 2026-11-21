@@ -3,6 +3,7 @@ import { capThemeGroup, groupByTheme, THEME_LABELS, type DigestView } from "../c
 import { listJoin, type SupportRollup } from "../core/support-rollup.ts";
 import type { ChangeEvent } from "../core/types.ts";
 import { unsubscribeUrl } from "./links.ts";
+import { describeSendFailure } from "./scrub.ts";
 
 export interface EmailContent {
   subject: string;
@@ -159,7 +160,8 @@ export const createEmailChannel = (options: EmailChannelOptions): DeliveryChanne
       });
       return { status: "sent" };
     } catch (error) {
-      return { status: "failed", error: error instanceof Error ? error.message : String(error) };
+      const { message, diagnostic } = describeSendFailure(error);
+      return { status: "failed", error: message, diagnostic };
     }
   },
 });
