@@ -154,17 +154,31 @@ export const saveSourceState = async (
  * The operator is always confirmed: it is seeded from a trusted env var, not
  * the public signup form, so it skips the double opt-in other subscribers go
  * through (§17). It never clears `unsubscribed_at`.
+ *
+ * The browser identity (`auth_user_id`, migration 10) does not move with the
+ * flag. The row that loses the flag loses its link, and a row that gains the
+ * flag starts without one, so after a change of address nobody can curate from
+ * the browser until `operator link` is run for the new operator. A row that
+ * already is the operator keeps its link.
  */
 export const ensureOperator = async (sql: Sql, email: string): Promise<string> =>
   (await sql.begin(async (tx) => {
+    // The link to the auth user (migration 10) belongs to the person who made
+    // it, so it is cleared with the flag. Otherwise moving the flag would leave
+    // the previous operator's Google account curating for the new one.
     await tx`
-      update subscriber set is_operator = false
+      update subscriber set is_operator = false, auth_user_id = null
       where is_operator and lower(email) <> lower(${email})
     `;
+    // A row that already is the operator keeps its link. One that is becoming
+    // the operator starts unlinked whatever it held before, so nobody is the
+    // browser operator until `operator link` says who.
     const rows = await tx<{ id: string }[]>`
       insert into subscriber (email, confirmed_at, is_operator) values (${email}, now(), true)
       on conflict (lower(email)) do update
-        set is_operator = true, confirmed_at = coalesce(subscriber.confirmed_at, now())
+        set is_operator = true,
+            confirmed_at = coalesce(subscriber.confirmed_at, now()),
+            auth_user_id = case when subscriber.is_operator then subscriber.auth_user_id end
       returning id
     `;
     const subscriberId = rows[0]!.id;
@@ -175,6 +189,44 @@ export const ensureOperator = async (sql: Sql, email: string): Promise<string> =
     `;
     return subscriberId;
   })) as string;
+
+/**
+ * Records which Supabase Auth user is the operator, so that
+ * `is_operator_request()` (migration 10) recognises that user's token. The row
+ * is found by the operator's address, so a command run against the wrong
+ * database or with the wrong address links nothing instead of linking someone
+ * else. Returns false when no operator has that address.
+ */
+export const linkOperator = async (
+  sql: Sql,
+  email: string,
+  authUserId: string,
+): Promise<boolean> => {
+  const rows = await sql<{ id: string }[]>`
+    update subscriber set auth_user_id = ${authUserId}::uuid
+    where is_operator and lower(email) = lower(${email})
+    returning id
+  `;
+  return rows.length > 0;
+};
+
+/** Removes the operator's link; nobody can curate from the browser until it is set again. */
+export const unlinkOperator = async (
+  sql: Sql,
+  email: string,
+): Promise<"unlinked" | "not-linked" | "no-operator"> => {
+  const rows = await sql<{ previous: string | null }[]>`
+    with target as (
+      select id, auth_user_id from subscriber
+      where is_operator and lower(email) = lower(${email}) for update
+    )
+    update subscriber s set auth_user_id = null
+    from target where s.id = target.id
+    returning target.auth_user_id as previous
+  `;
+  if (rows.length === 0) return "no-operator";
+  return rows[0]!.previous === null ? "not-linked" : "unlinked";
+};
 
 /**
  * Subscribers a pipeline run assembles digests for: the confirmed, not

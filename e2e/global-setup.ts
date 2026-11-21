@@ -10,6 +10,8 @@ import { createWebFeaturesAdapter } from "../src/adapters/web-features.ts";
 import type { WebFeaturesData } from "../src/core/web-features/diff.ts";
 import { runPipeline } from "../src/cli/pipeline.ts";
 import { connect, type Sql } from "../src/store/db.ts";
+import { linkOperator } from "../src/store/store.ts";
+import { OPERATOR_EMAIL, OPERATOR_USER_ID } from "./accounts.ts";
 
 const load = (name: string): WebFeaturesData =>
   JSON.parse(
@@ -45,12 +47,14 @@ export default async function globalSetup(): Promise<void> {
     for (const fixture of ["old.json", "new.json"]) {
       await runPipeline(sql, {
         adapters: [createWebFeaturesAdapter({ fetchData: () => Promise.resolve(load(fixture)) })],
-        subscriberEmail: "operator@example.com",
+        subscriberEmail: OPERATOR_EMAIL,
         // Windows cut only once they elapse; the seed pretends to run a day later.
         now: () => new Date(Date.now() + 25 * 60 * 60 * 1000),
       });
     }
     await seedOtherSubscriberDigest(sql);
+    // What `operator link` does in production: the specs sign in as this user.
+    await linkOperator(sql, OPERATOR_EMAIL, OPERATOR_USER_ID);
   } finally {
     await sql.end();
   }

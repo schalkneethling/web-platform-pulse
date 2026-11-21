@@ -38,11 +38,13 @@ export interface CurationDraft {
  * - `signed-out`: there is no session, so nothing was asked.
  * - `not-operator`: a session exists but `is_operator_request()` is false, so
  *   the `authenticated` role would read no rows and every write would be a 42501.
+ *   It carries the signed-in account's auth user id, which the operator needs to
+ *   run `operator link`, and nothing else about the account.
  * - `no-draft`: the operator is signed in and no issue is open.
  */
 export type CurationState =
   | { status: "signed-out" }
-  | { status: "not-operator" }
+  | { status: "not-operator"; userId: string }
   | { status: "no-draft" }
   | { status: "draft"; draft: CurationDraft };
 
@@ -145,7 +147,8 @@ export const fetchCuration = async (client: SupabaseClient): Promise<CurationSta
 
   const operator = await client.rpc("is_operator_request");
   if (operator.error) throw new Error(operator.error.message);
-  if (operator.data !== true) return { status: "not-operator" };
+  if (operator.data !== true)
+    return { status: "not-operator", userId: sessionData.session.user.id };
 
   const { data: issue, error } = await client
     .from("issue")

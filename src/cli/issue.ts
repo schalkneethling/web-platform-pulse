@@ -18,7 +18,13 @@ import {
   withIssueSendLock,
 } from "../store/issue.ts";
 import type { CliValues } from "./command.ts";
-import { readSettings, requireMail, type ConfigResult, type MailConfig } from "./config.ts";
+import {
+  readSettings,
+  requireMail,
+  requireOperatorEmail,
+  type ConfigResult,
+  type MailConfig,
+} from "./config.ts";
 
 /**
  * `issue open`: cut the draft for the elapsed week, or report the one already
@@ -59,14 +65,9 @@ export const resolvePreviewConfig = (
   const settings = readSettings(values, env);
   const mail = requireMail("issue preview", settings);
   if (!mail.ok) return mail;
-  if (!settings.operatorEmail) {
-    return {
-      ok: false,
-      message:
-        "issue preview needs the operator address: set PULSE_SUBSCRIBER_EMAIL or pass --email.",
-    };
-  }
-  return { ...mail, to: settings.operatorEmail };
+  const operator = requireOperatorEmail("issue preview", settings);
+  if (!operator.ok) return operator;
+  return { ...mail, to: operator.email };
 };
 
 /** `issue publish` mails every subscriber, so it needs no operator address. */

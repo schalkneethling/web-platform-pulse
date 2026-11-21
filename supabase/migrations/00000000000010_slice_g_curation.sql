@@ -31,14 +31,39 @@ grant usage on schema public to authenticated;
 -- Production runs Supabase Auth with the Google provider and local
 -- development runs PostgREST alone, but both put the verified token's claims
 -- in the Postgres setting `request.jwt.claims`, so one function answers the
--- question in both. Three claims must agree:
+-- question in both.
+--
+-- The operator is identified by the auth user id, not by an email address.
+-- The `email` claim is the account's primary email, which its owner can change
+-- and which another account can come to hold; `app_metadata.providers` lists
+-- every provider linked to the account, not the one used to sign in. Neither
+-- proves "this is the operator signing in with Google". The `sub` claim is the
+-- auth user's id: it never changes for the life of the account and no one
+-- can pick it. So `subscriber.auth_user_id` records which auth user is the
+-- operator, and the check compares `sub` with it.
+--
+-- The column is nullable and is set by `operator link <auth-user-id>` (see
+-- src/cli/operator.ts) after the operator has signed in once and read their id
+-- off /curate. Until it is set, nobody is the browser operator. `ensureOperator`
+-- clears it when the operator flag moves to another subscriber, so a link
+-- never outlives the address it was made for. It is unique, so one auth user
+-- cannot be linked to two subscribers.
+--
+-- `subscriber` was created in migration 3, hence an `alter table`. Neither
+-- `anon` nor `authenticated` has any grant on the table (migrations 4 and 8),
+-- so the column is as unreadable as the rest.
+alter table subscriber add column auth_user_id uuid unique;
+
+-- Two claims must agree:
 --   * `role` is `authenticated`, so an anon token cannot qualify;
---   * `email` matches the subscriber marked `is_operator`;
---   * `app_metadata.providers` contains `google`. The email claim alone would
---     also be satisfied by someone who registered that address with a
---     password, so the provider is what ties it to the operator's Google
---     account. `app_metadata` is written only by the auth server; the
---     `user_metadata` claim is editable by the user and is never read here.
+--   * `sub` is the `auth_user_id` of the subscriber marked `is_operator`.
+-- Nothing else in the token is read. In particular `email`, `app_metadata` and
+-- `user_metadata` are ignored: the last is editable by the user.
+--
+-- `sub` is compared as text with the uuid's canonical lower-case form rather
+-- than cast to uuid. A cast raises on a malformed value, which would turn a
+-- hostile or broken token into a database error instead of a plain "no"; the
+-- comparison simply never matches. `lower` accepts an upper-case uuid.
 --
 -- `current_setting(..., true)` returns null instead of raising when the
 -- setting does not exist, and `nullif(..., '')` covers a session that set it
@@ -58,9 +83,9 @@ as $$
       from public.subscriber s,
         lateral (select nullif(current_setting('request.jwt.claims', true), '')::jsonb as claims) c
       where s.is_operator
-        and lower(s.email) = lower(c.claims ->> 'email')
+        and s.auth_user_id is not null
         and c.claims ->> 'role' = 'authenticated'
-        and (c.claims -> 'app_metadata' -> 'providers') ? 'google'
+        and s.auth_user_id::text = lower(c.claims ->> 'sub')
     ),
     false
   );

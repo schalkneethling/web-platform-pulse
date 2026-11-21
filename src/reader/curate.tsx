@@ -108,6 +108,13 @@ export const Curate = () => {
       {state.status === "not-operator" && (
         <>
           <p>This account is not the operator.</p>
+          <p>
+            If it should be, run <code>vp run pulse operator link</code> with this account's user
+            id, then reload this page:
+          </p>
+          <p>
+            <code className="curation__user-id">{state.userId}</code>
+          </p>
           <SignOut />
         </>
       )}

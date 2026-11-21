@@ -39,16 +39,17 @@ const signToken = (claims: Record<string, unknown>): string => {
 export const anonKey = (): string => signToken({ role: "anon" });
 
 /**
- * Mint the local equivalent of a signed-in user's access token. Supabase puts
- * the sign-in providers in `app_metadata`, which only the auth server writes,
- * so that is where the operator check reads them; `providers` defaults to the
- * Google sign-in the operator uses in production.
+ * Mint the local equivalent of a signed-in user's access token. The operator
+ * check (`is_operator_request`, migration 10) reads the `sub` claim, which
+ * Supabase sets to the auth user's id, and nothing else, so `userId` is the
+ * one required claim. `email` is optional and exists so a test can present the
+ * operator's address under another user's id and see it refused.
  */
-export const authenticatedToken = (email: string, providers: string[] = ["google"]): string =>
+export const authenticatedToken = (userId: string, email?: string): string =>
   signToken({
     role: "authenticated",
-    email,
-    app_metadata: { provider: providers[0], providers },
+    sub: userId,
+    ...(email === undefined ? {} : { email }),
   });
 
 const waitForReady = async (): Promise<void> => {

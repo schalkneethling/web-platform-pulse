@@ -93,8 +93,9 @@ title); `issue retry` resends the emails that failed, for any published issue,
 and publishes nothing. `.github/workflows/issue.yml` runs `open` every Sunday
 at 06:00 UTC and offers all four by hand. Curation happens at `/curate` in the reader: the
 operator signs in with Google (Supabase Auth), and the database decides who
-that is (`is_operator_request()`, migration 10), so the page holds no access
-rule of its own. An issue with no note on any included item is flagged on the
+that is (`is_operator_request()`, migration 10, by the token's `sub` against the
+`auth_user_id` that `operator link` stored), so the page holds no access rule of
+its own. An issue with no note on any included item is flagged on the
 console by `open` and `publish`, and by a banner in the preview email.
 
 What Slice G deliberately leaves out:

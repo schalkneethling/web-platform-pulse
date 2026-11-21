@@ -106,7 +106,9 @@ emails and exits. A plain `vp run pulse` sends them too, after the pipeline.
 There are two kinds of subscriber. The **operator** is the address in
 `PULSE_SUBSCRIBER_EMAIL`: the pipeline creates it, confirms it without an
 email round trip, and marks it with `subscriber.is_operator`. Its digest is
-unfiltered, and it is the one the public reader shows.
+unfiltered, and it is the one the public reader shows. Signing in to curate is
+a separate step: `vp run pulse operator link <auth-user-id>` records which
+Supabase Auth user is the operator (see "Curating at `/curate`").
 
 Everyone else signs up through the form in the reader and goes through double
 opt-in:
@@ -187,12 +189,22 @@ operator writes on each item.
 ### Curating at `/curate`
 
 Open `/curate` on the reader and press "Sign in with Google". The reader asks
-the database whether that account is the operator: the Google address must
-match the subscriber marked `is_operator` (the address in
-`PULSE_SUBSCRIBER_EMAIL`), and Supabase must report `google` as the sign-in
-provider. Any other account sees "This account is not the operator" and can
-read and write nothing, whatever the browser does, because the check lives in
-migration 10 and not in the page.
+the database whether that account is the operator. The database answers by the
+account's Supabase Auth user id, the `sub` claim of its token, and by nothing
+else in the token: `subscriber.auth_user_id` holds the operator's id, and
+`is_operator_request()` (migration 10) is true only for a token whose `sub`
+equals it. The email address and the list of linked providers are not read,
+because the owner of an account can change its address and the list names every
+provider linked to the account, not the one used to sign in. Any other account
+sees "This account is not the operator" and can read and write nothing,
+whatever the browser does, because the check lives in the database and not in
+the page.
+
+That page also shows the signed-in account's user id, and nothing else about
+the account, so the operator can link it (see the one-time setup below). Until
+`operator link` has run, nobody is the operator in the browser. If the operator
+address changes, the pipeline moves the operator flag and the link is cleared
+with it, so the new operator is unlinked until `operator link` runs again.
 
 The page lists the draft's window, included events first. Each event has an
 Include checkbox and, once included, a section and a note. Changes save as you
@@ -221,11 +233,18 @@ sign in by storing a session minted with the local secret.
    URLs. Without this, Supabase sends the operator back to the Site URL.
 3. Apply migrations 9 and 10 in the SQL editor, in order, before merging the
    code that uses them, as with every migration.
-4. Turn off email-and-password sign-ups under Authentication. Only a Google
-   sign-in can curate, because the database requires `google` among the
-   token's providers, so a password account adds nothing but an account to
-   look after, and an account registered with the operator's address is one
-   Supabase could later link to the operator's Google identity.
+4. Run the pipeline once so the operator exists (`vp run pulse`, with
+   `PULSE_SUBSCRIBER_EMAIL` set to the operator's address).
+5. Sign in once at `/curate` with the operator's Google account. The page says
+   the account is not the operator yet and shows its user id.
+6. Copy that id and run
+   `vp run pulse operator link <auth-user-id>`. Reload `/curate`: the draft is
+   there. `vp run pulse operator unlink` undoes it.
+7. Turn off email-and-password sign-ups under Authentication. This is defence in
+   depth and not what the check relies on, which is the auth user id: with
+   password sign-ups off, there is no second account to look after, and no
+   account registered with the operator's address that Supabase could later link
+   to the operator's Google identity.
 
 ## Testing
 

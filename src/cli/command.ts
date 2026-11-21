@@ -28,10 +28,16 @@ export type Command =
   | { kind: "issue-preview" }
   | { kind: "issue-publish" }
   | { kind: "issue-retry" }
+  | { kind: "operator-link"; authUserId: string }
+  | { kind: "operator-unlink" }
   | { kind: "unknown"; message: string };
 
 const VALID_COMMANDS =
-  '"confirmations", "issue open", "issue preview", "issue publish" and "issue retry"';
+  '"confirmations", "issue open", "issue preview", "issue publish", "issue retry", ' +
+  '"operator link" and "operator unlink"';
+
+/** The shape of a uuid, not its version: Postgres accepts any, and so does Supabase Auth. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Maps the positional arguments to a command without touching the environment,
@@ -53,6 +59,21 @@ export const resolveCommand = (positionals: string[]): Command => {
   }
   if (subcommand === "issue" && extra.length === 1 && extra[0] === "retry") {
     return { kind: "issue-retry" };
+  }
+  if (subcommand === "operator" && extra[0] === "link") {
+    const id = extra[1];
+    if (extra.length !== 2 || id === undefined || !UUID.test(id)) {
+      return {
+        kind: "unknown",
+        message:
+          "operator link needs the auth user id as its only argument, a uuid " +
+          `(the id /curate shows a signed-in account), got ${extra.slice(1).join(" ") || "nothing"}`,
+      };
+    }
+    return { kind: "operator-link", authUserId: id.toLowerCase() };
+  }
+  if (subcommand === "operator" && extra.length === 1 && extra[0] === "unlink") {
+    return { kind: "operator-unlink" };
   }
   return {
     kind: "unknown",

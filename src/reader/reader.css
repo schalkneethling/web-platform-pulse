@@ -314,6 +314,12 @@ body {
   font-size: var(--font-size-s);
 }
 
+/* A user id is one long unbroken string; let it wrap instead of overflowing a
+ * narrow screen. */
+.curation__user-id {
+  overflow-wrap: anywhere;
+}
+
 .curation__status {
   min-block-size: 1.6em;
   margin: var(--space-xs) 0 0;

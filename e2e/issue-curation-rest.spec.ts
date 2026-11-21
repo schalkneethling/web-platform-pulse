@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { anonKey, authenticatedToken, REST_URL } from "../scripts/dev-rest.ts";
+import { OPERATOR_EMAIL, OPERATOR_USER_ID, STRANGER_USER_ID } from "./accounts.ts";
 import { connect } from "../src/store/db.ts";
 import { openIssue } from "../src/store/issue.ts";
 
@@ -40,10 +41,10 @@ test.afterAll(async () => {
 
 const headers = (token: string) => ({ Authorization: `Bearer ${token}` });
 
-test("the operator's Google token reads the draft and curates it through PostgREST", async ({
+test("the operator's token reads the draft and curates it through PostgREST", async ({
   request,
 }) => {
-  const operator = headers(authenticatedToken("operator@example.com"));
+  const operator = headers(authenticatedToken(OPERATOR_USER_ID));
 
   const issues = await request.get(`${REST_URL}/issue?select=id,status`, { headers: operator });
   expect(issues.ok()).toBe(true);
@@ -80,7 +81,7 @@ test("the operator's Google token reads the draft and curates it through PostgRE
 test("a signed-in user who is not the operator sees nothing and cannot write", async ({
   request,
 }) => {
-  const stranger = headers(authenticatedToken("stranger@example.com"));
+  const stranger = headers(authenticatedToken(STRANGER_USER_ID));
   const issues = await request.get(`${REST_URL}/issue`, { headers: stranger });
   expect(await issues.json()).toEqual([]);
 
@@ -91,9 +92,9 @@ test("a signed-in user who is not the operator sees nothing and cannot write", a
   expect(heading.status()).toBe(403);
 });
 
-test("the operator's address without the Google provider is refused", async ({ request }) => {
-  const emailOnly = headers(authenticatedToken("operator@example.com", ["email"]));
-  const issues = await request.get(`${REST_URL}/issue`, { headers: emailOnly });
+test("the operator's address under another user's id is refused", async ({ request }) => {
+  const impostor = headers(authenticatedToken(STRANGER_USER_ID, OPERATOR_EMAIL));
+  const issues = await request.get(`${REST_URL}/issue`, { headers: impostor });
   expect(await issues.json()).toEqual([]);
 });
 

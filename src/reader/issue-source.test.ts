@@ -159,7 +159,12 @@ const fakeClient = (options: FakeOptions = {}) => {
     auth: {
       getSession: () =>
         Promise.resolve({
-          data: { session: options.session === false ? null : { access_token: "t" } },
+          data: {
+            session:
+              options.session === false
+                ? null
+                : { access_token: "t", user: { id: "user-1", email: "someone@example.com" } },
+          },
         }),
     },
     from: (table: string) => {
@@ -200,7 +205,9 @@ describe("fetchCuration", () => {
 
   it("asks the database whether the account is the operator, and reads nothing for a stranger", async () => {
     const { client, calls, rpcs } = fakeClient({ operator: false, issue: issueRow() });
-    expect(await fetchCuration(client)).toEqual({ status: "not-operator" });
+    // The state carries the account's id so the page can show it, and nothing
+    // else about the account: not the address the session also holds.
+    expect(await fetchCuration(client)).toEqual({ status: "not-operator", userId: "user-1" });
     expect(rpcs).toEqual([{ name: "is_operator_request", args: undefined }]);
     expect(calls).toEqual([]);
   });

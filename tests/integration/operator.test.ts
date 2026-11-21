@@ -2,7 +2,13 @@
 // migration 7), not whichever subscriber happens to be first. Real Postgres.
 import { afterAll, beforeEach, describe, expect, it } from "vite-plus/test";
 import { connect } from "../../src/store/db.ts";
-import { confirmSubscription, ensureOperator, requestSubscription } from "../../src/store/store.ts";
+import {
+  confirmSubscription,
+  ensureOperator,
+  linkOperator,
+  requestSubscription,
+  unlinkOperator,
+} from "../../src/store/store.ts";
 
 const sql = connect();
 
@@ -139,5 +145,103 @@ describe("operator identity", () => {
     ).toMatchObject([
       { is_operator: true, confirmed_at: expect.any(Date), unsubscribed_at: expect.any(Date) },
     ]);
+  });
+});
+
+describe("operator link", () => {
+  const USER = "11111111-1111-4111-8111-111111111111";
+  const OTHER_USER = "22222222-2222-4222-8222-222222222222";
+
+  const linkOf = async (email: string): Promise<string | null> =>
+    (
+      await sql<{ auth_user_id: string | null }[]>`
+        select auth_user_id from subscriber where lower(email) = lower(${email})
+      `
+    )[0]!.auth_user_id;
+
+  it("links an auth user to the operator row", async () => {
+    await ensureOperator(sql, OPERATOR);
+
+    expect(await linkOperator(sql, OPERATOR, USER)).toBe(true);
+
+    expect(await linkOf(OPERATOR)).toBe(USER);
+  });
+
+  it("matches the address without regard to case", async () => {
+    await ensureOperator(sql, OPERATOR);
+    expect(await linkOperator(sql, "Operator@Example.COM", USER)).toBe(true);
+    expect(await linkOf(OPERATOR)).toBe(USER);
+  });
+
+  it("links nothing for an address that is not the operator", async () => {
+    await ensureOperator(sql, OPERATOR);
+    await signUp("alice@example.com");
+
+    expect(await linkOperator(sql, "alice@example.com", USER)).toBe(false);
+    expect(await linkOperator(sql, "nobody@example.com", USER)).toBe(false);
+
+    expect(await sql`select auth_user_id from subscriber where auth_user_id is not null`).toEqual(
+      [],
+    );
+  });
+
+  it("replaces an earlier link", async () => {
+    await ensureOperator(sql, OPERATOR);
+    await linkOperator(sql, OPERATOR, USER);
+    await linkOperator(sql, OPERATOR, OTHER_USER);
+    expect(await linkOf(OPERATOR)).toBe(OTHER_USER);
+  });
+
+  it("is refused a second subscriber with the same auth user by the database", async () => {
+    await ensureOperator(sql, OPERATOR);
+    await linkOperator(sql, OPERATOR, USER);
+    const aliceId = await signUp("alice@example.com");
+    await expect(
+      sql`update subscriber set auth_user_id = ${USER}::uuid where id = ${aliceId}`,
+    ).rejects.toThrow(/subscriber_auth_user_id_key/);
+  });
+
+  it("unlinks, and says whether there was anything to unlink", async () => {
+    await ensureOperator(sql, OPERATOR);
+    await linkOperator(sql, OPERATOR, USER);
+
+    expect(await unlinkOperator(sql, OPERATOR)).toBe("unlinked");
+    expect(await linkOf(OPERATOR)).toBeNull();
+    expect(await unlinkOperator(sql, OPERATOR)).toBe("not-linked");
+    expect(await unlinkOperator(sql, "nobody@example.com")).toBe("no-operator");
+  });
+
+  it("keeps the link when ensureOperator runs again for the same address", async () => {
+    await ensureOperator(sql, OPERATOR);
+    await linkOperator(sql, OPERATOR, USER);
+
+    await ensureOperator(sql, OPERATOR);
+    await ensureOperator(sql, "OPERATOR@example.com");
+
+    expect(await linkOf(OPERATOR)).toBe(USER);
+  });
+
+  it("does not move the link with the flag: the new operator starts unlinked", async () => {
+    const oldId = await ensureOperator(sql, OPERATOR);
+    await linkOperator(sql, OPERATOR, USER);
+
+    const newId = await ensureOperator(sql, "new-operator@example.com");
+
+    expect(newId).not.toBe(oldId);
+    expect(await linkOf("new-operator@example.com")).toBeNull();
+    // The old row is no longer the operator, and holds no link that could
+    // come back to life if the flag were ever set on it again.
+    expect(await linkOf(OPERATOR)).toBeNull();
+  });
+
+  it("starts an existing subscriber who is promoted unlinked, even if a stale link sat on their row", async () => {
+    await ensureOperator(sql, OPERATOR);
+    const aliceId = await signUp("alice@example.com");
+    // Not reachable through the commands; this is a hand-edited row.
+    await sql`update subscriber set auth_user_id = ${USER}::uuid where id = ${aliceId}`;
+
+    await ensureOperator(sql, "alice@example.com");
+
+    expect(await linkOf("alice@example.com")).toBeNull();
   });
 });

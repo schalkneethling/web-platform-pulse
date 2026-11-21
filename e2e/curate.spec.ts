@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { OPERATOR_EMAIL, OPERATOR_USER_ID, STRANGER_USER_ID } from "./accounts.ts";
 import { signInAs } from "./curate-session.ts";
 import { MAILPIT_API_URL, MAILPIT_SMTP_URL } from "../scripts/dev-mail.ts";
 import { runIssuePreview, runIssuePublish, runIssueRetry } from "../src/cli/issue.ts";
@@ -17,7 +18,7 @@ import { confirmSubscription, ingestCandidates, requestSubscription } from "../s
 // project only after issue-curation-rest.spec.ts has cleaned up its own draft.
 test.describe.configure({ mode: "serial" });
 
-const OPERATOR = "operator@example.com";
+const OPERATOR = OPERATOR_EMAIL;
 const sql = connect();
 const smtp = createSmtpSender(MAILPIT_SMTP_URL);
 
@@ -31,9 +32,9 @@ test.afterAll(async () => {
 // (see curate-session.ts). The auth server is never contacted for it; the
 // "no auth requests" assertions below keep that true.
 
-const signedInPage = async (browser: Browser, email: string, providers?: string[]) => {
+const signedInPage = async (browser: Browser, userId: string, email?: string) => {
   const context = await browser.newContext();
-  const session = await signInAs(context, email, providers);
+  const session = await signInAs(context, userId, email);
   const page = await context.newPage();
   const authRequests: string[] = [];
   page.on("request", (request) => {
@@ -109,7 +110,7 @@ const QUERIES_TITLE = "Container style queries is now Baseline newly available";
 // ---------------------------------------------------------------------------
 
 test("the operator is told how to open a draft when none is open", async ({ browser }) => {
-  const { context, page } = await signedInPage(browser, OPERATOR);
+  const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
   await page.goto("/curate");
 
   await expect(page.getByText("There is no draft issue.")).toBeVisible();
@@ -141,8 +142,14 @@ test.describe("with a draft open", () => {
     await expect(page.getByText(LH_TITLE)).toHaveCount(0);
   });
 
-  test("a signed-in account that is not the operator sees no issue data", async ({ browser }) => {
-    const { context, page, authRequests } = await signedInPage(browser, "stranger@example.com");
+  test("a signed-in account that is not the operator sees no issue data, only its own user id", async ({
+    browser,
+  }) => {
+    const { context, page, authRequests } = await signedInPage(
+      browser,
+      STRANGER_USER_ID,
+      "stranger@example.com",
+    );
     await page.goto("/curate");
 
     await expect(page.getByText("This account is not the operator.")).toBeVisible();
@@ -150,17 +157,24 @@ test.describe("with a draft open", () => {
     await expect(page.getByText("Issue #1")).toHaveCount(0);
     await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveCount(0);
     await expect(page.getByText(extraTitle(1))).toHaveCount(0);
+
+    // The account's id is shown so the operator can run `operator link` with
+    // it. Nothing else about the account is: not the address the session holds.
+    await expect(page.getByText(/operator link/)).toBeVisible();
+    await expect(page.locator("code", { hasText: STRANGER_USER_ID })).toHaveCount(1);
+    await expect(page.getByText("stranger@example.com")).toHaveCount(0);
     expect(authRequests).toEqual([]);
     await context.close();
   });
 
-  test("the operator's address without a Google sign-in is not the operator", async ({
+  test("the operator's address under another account's id is not the operator", async ({
     browser,
   }) => {
-    const { context, page } = await signedInPage(browser, OPERATOR, ["email"]);
+    const { context, page } = await signedInPage(browser, STRANGER_USER_ID, OPERATOR);
     await page.goto("/curate");
 
     await expect(page.getByText("This account is not the operator.")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveCount(0);
     await context.close();
   });
 
@@ -172,7 +186,7 @@ test.describe("with a draft open", () => {
     await anonymousPage.goto("/");
     const publicText = await anonymousPage.getByRole("article").innerText();
 
-    const { context, page, session, authRequests } = await signedInPage(browser, OPERATOR);
+    const { context, page, session, authRequests } = await signedInPage(browser, OPERATOR_USER_ID);
     const restHeaders: Record<string, string>[] = [];
     page.on("request", async (request) => {
       if (request.url().includes("/rest/v1/")) restHeaders.push(await request.allHeaders());
@@ -204,7 +218,7 @@ test.describe("with a draft open", () => {
   test("the list shows the first 50 events outside the issue and pages through the rest", async ({
     browser,
   }) => {
-    const { context, page } = await signedInPage(browser, OPERATOR);
+    const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
     await page.goto("/curate");
 
     // Twelve items are in the issue; 130 events fall in the window.
@@ -228,7 +242,7 @@ test.describe("with a draft open", () => {
     browser,
   }) => {
     const title = extraTitle(20);
-    const { context, page } = await signedInPage(browser, OPERATOR);
+    const { context, page } = await signedInPage(browser, OPERATOR_USER_ID);
     await page.goto("/curate");
 
     const row = item(page, title);
@@ -277,7 +291,7 @@ test.describe("with a draft open", () => {
     test.setTimeout(240_000);
     const included = extraTitle(10);
     const note = "This is why anchor positioning matters to you.";
-    const { context, page, authRequests } = await signedInPage(browser, OPERATOR);
+    const { context, page, authRequests } = await signedInPage(browser, OPERATOR_USER_ID);
     await page.goto("/curate");
     await expect(page.getByRole("heading", { name: "Issue #1 (draft)" })).toBeVisible();
 
