@@ -18,6 +18,8 @@ export interface IssueEmailOptions {
 const PREVIEW_WARNING =
   "No included item has a note yet, so this issue would read as a changelog. Add a sentence to each item that matters before publishing.";
 
+const PREVIEW_NOTICE = "This is a preview for the operator. It has not been sent to subscribers.";
+
 /**
  * Notes and the intro are plain text. A blank line starts a new paragraph and
  * a single newline stays a line break; nothing else is interpreted, so neither
@@ -121,7 +123,10 @@ export const renderIssueEmail = (
   ].join("\n");
 
   const text = [
-    ...(warn ? [`[Preview] ${PREVIEW_WARNING}`, ""] : []),
+    // Every preview is marked in the plain-text body, like its subject, so a
+    // text-only mail client cannot show a preview as if it had been sent. The
+    // un-annotated warning, when it applies, is the marker's sentence.
+    ...(preview ? [`[Preview] ${warn ? PREVIEW_WARNING : PREVIEW_NOTICE}`, ""] : []),
     heading,
     ...(paragraphs(issue.intro).length > 0 ? ["", paragraphs(issue.intro).join("\n\n")] : []),
     ...groups.flatMap((group) => [

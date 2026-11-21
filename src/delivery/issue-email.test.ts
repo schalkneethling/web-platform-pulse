@@ -179,6 +179,18 @@ describe("renderIssueEmail", () => {
     }
   });
 
+  it("marks the plain-text body of every preview and never of the sent issue", () => {
+    const cases: [string, IssueItemView[]][] = [
+      ["no items", []],
+      ["an un-annotated item", [item("A", "shipped")]],
+      ["an annotated item", [item("A", "shipped", { note: "Why it matters." })]],
+    ];
+    for (const [, items] of cases) {
+      expect(render(items, { preview: true }).text.startsWith("[Preview]")).toBe(true);
+      expect(render(items).text).not.toContain("[Preview]");
+    }
+  });
+
   it("carries the unsubscribe link in both bodies", () => {
     const { html, text } = render([item("A", "shipped")]);
     expect(html).toContain(`<a href="${LINK}">Unsubscribe</a>`);
