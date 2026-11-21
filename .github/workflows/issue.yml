@@ -39,12 +39,33 @@ on:
 permissions:
   contents: read
 
-# The same group as pulse.yml and confirmations.yml. Those runs read and send
-# from the same subscriber rows, and two overlapping `issue publish` runs would
-# race on the same pending subscribers. A run that finds another in progress
-# waits for it rather than cancelling it.
+# This workflow has its own group, `issue`, and does not share `confirmations`
+# with pulse.yml and confirmations.yml. GitHub keeps at most one run waiting per
+# group and cancels the waiting run when another arrives, and confirmations.yml
+# runs every 15 minutes, so a `publish` started by hand while a confirmations
+# run was in progress could be cancelled by the next confirmations run before it
+# ever started. In its own group a waiting `issue` command can only be replaced
+# by another `issue` command. A run that finds another `issue` run in progress
+# waits for it rather than cancelling it (`cancel-in-progress: false`).
+#
+# What stops two sends colliding is not this group. `publish` and `retry` each
+# hold a Postgres advisory lock for the whole run (withIssueSendLock in
+# src/store/issue.ts), so a run started from a laptop and a run started here
+# cannot both send: the second prints that another is running and exits 1.
+#
+# Nothing needs to keep these commands apart from the daily pipeline or the
+# confirmations run, because they write different tables. `issue open`,
+# `publish` and `retry` write `issue`, `issue_item` and `issue_delivery`, which
+# the pipeline and confirmations never touch; the pipeline and confirmations
+# write `change_event`, `digest`, `delivery` and the subscriber rows, which the
+# issue commands only read. The one overlap is `issue open` reading
+# `change_event` while the pipeline ingests. An event committed just after that
+# read is not pre-filled, but it is not lost: it is first observed inside the
+# draft's window, and /curate lists every event in the window, so the operator
+# can include it. The schedules are an hour apart on Sundays (06:00 and 07:00
+# UTC), so this takes a run longer than an hour.
 concurrency:
-  group: confirmations
+  group: issue
   cancel-in-progress: false
 
 jobs:
