@@ -37,7 +37,7 @@
     "@varlock/vite-integration": "^1.5.2",
     "@vitejs/plugin-react": "^6.3.0",
     "babel-plugin-react-compiler": "^1.0.0",
-    "knip": "^6.45.1",
+    "knip": "^6.46.1",
     "typescript": "~7.0.2",
     "varlock": "^1.21.0",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.2",
